@@ -501,7 +501,10 @@ main {
 
         uword lineAddr = allocLine(lineBuffer)
         ; out of memory == $0000, stop reading.
-        if lineAddr == $0000 break
+        if lineAddr == $0000 {
+            warn("File too big!")
+            break
+        }
         idx = main.lineCount as ubyte
         view.INDEX[idx] = lineAddr
         main.lineCount++
