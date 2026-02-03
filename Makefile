@@ -45,6 +45,11 @@ br: build run
 build:
 	$(PROG8C) $(OPT) -target $(TARGET) $(XVI2_SRC)
 
+iso2pet:
+	$(PROG8C) $(OPT) -target $(TARGET) src/iso2pet.p8
+run2:
+	$(EMU) -scale 2 -prg iso2pet.prg -run
+
 run:
 	$(EMU) -debug -scale 2 -prg xvi2.prg -run -gif demo.gif
 
