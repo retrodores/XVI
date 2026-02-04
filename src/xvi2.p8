@@ -1,3 +1,6 @@
+;
+; vim:set softtabstop=2 shiftwidth=2 expandtab:
+;
 ; BUGS:
 ; - dd bug
 ; -- 1. open a file, immediately jump to the botton
@@ -268,7 +271,7 @@ command {
           }
         }
         main.init_empty_buffer(1)
-        main.start.char = 'R'
+        main.char = 'R'
         flags.UNSAVED = true
         main.toggle_nav()
         cursor.place(view.LEFT_MARGIN, view.TOP_LINE)
@@ -640,6 +643,12 @@ main {
     main.update_tracker()
   }
 
+  ubyte char
+  ubyte last_char
+  ubyte col
+  ubyte row
+  ubyte numbers
+
   sub start () {
     txt.iso()
     doc.tabNum               = 0 ; for future proofing
@@ -654,9 +663,6 @@ main {
 
     sys.wait(20)
 
-    ubyte char = 0
-    ubyte col
-    ubyte row
 
     ;txt.plot(0,1)
     ;cursor.place(view.LEFT_MARGIN, view.TOP_LINE)
@@ -666,46 +672,25 @@ main {
 
     splash()
 
-    ; this is the main loop
+    repeat {
     NAVCHARLOOP:
-      void, char = cbm.GETIN()
-
-    SKIP_NAVCHARLOOP:               ; jump to here to skip input
-
-      navchar_start()               ; event hook
-
-      if char == $00 {
-        goto NAVCHARLOOP
-      }
-
-      col = view.c()
-      row = view.r()
-
-      ; On splash/INIT: treat ESC as a prefix so ESC+R / ESC+i is instant.
-      if main.MODE == mode.INIT {
-        when char {
-          'R','i','a' -> {
-            toggle_nav()
-            flags.UNSAVED = true
-            main.clear_splash()
-            main.printLineNum(1)
-            main.update_tracker()
-          }
-          ':'  -> {
-            flags.FIRST_COMMAND = true
-            command.prompt()        ; populates command.cmdBuffer
-            goto PROCESS_COMMAND
-          }
+        char = cbm.GETIN2()
+        navchar_start()
+        if char == $00 continue
+    SKIP_NAVCHARLOOP:
+        col = view.c()
+        row = view.r()
+        when main.MODE {
+            mode.INIT -> key_mode_init()
+            mode.NAV -> key_mode_nav()
+            mode.INSERT -> key_mode_insert()
+            mode.REPLACE -> key_mode_replace()
+            mode.COMMAND -> key_mode_command()
         }
+        last_char = char
+    }
+    ; only reachable via a break in the above repeat {} loop
 
-        ; "goto" dispatcher on edit or command modes
-        when char {
-          'R'  -> { goto RLOOP2 }
-          'i'  -> { goto ILOOP  }
-          'a'  -> { goto ILOOP  }
-        }
-        goto NAVCHARLOOP
-      }
 
       when char {
         $07 -> {
@@ -717,406 +702,448 @@ main {
           }
           main.update_tracker()
         }
-        ':' -> {                         ; command line
-          if main.MODE == mode.NAV {
-            command.prompt()             ; populates command.cmdBuffer
 
-            PROCESS_COMMAND:
-            ; clear command line
-            txt.plot(0, view.FOOTER_LINE)
-            prints(view.BLANK_LINE79)
-            main.update_tracker()
-            command.process()
-          }
 
-          ;debug.assert(main.lineCount, 93, debug.EQ, "ln 515 ... main.lineCount == 93")
+      }
+  }
+
+  sub key_mode_init() {
+    ; On splash/INIT: treat ESC as a prefix so ESC+R / ESC+i is instant.
+      when char {
+        'R','i','a' -> {
           toggle_nav()
-          cursor.replace(col, row)
+          flags.UNSAVED = true
+          main.clear_splash()
+          main.printLineNum(1)
           main.update_tracker()
         }
-        'D' -> {
-          if main.MODE == mode.NAV {
-            main.clear_current_line()
-          }
-        }
-        'd' -> {
-          if main.MODE == mode.NAV {
-            DDLOOP:
-            void, char = cbm.GETIN()
-            when char {
-              $1b -> {       ; ESC key, throw into NAV mode from any other mode
-                toggle_nav()
-                goto NAVCHARLOOP
-              }
-              'd' -> {
-                main.do_dd()
-                goto NAVCHARLOOP
-              }
-            }
-            goto DDLOOP
-          }
-        }
-        'O' -> {
-          if main.MODE == mode.NAV {
-            main.insert_line_above()
-            goto RLOOP2 ; REPLACE mode, start editing blank line immediately
-          }
-        }
-        'o' -> {
-          if main.MODE == mode.NAV {
-            main.insert_line_below()
-            goto RLOOP2 ; REPLACE mode, start editing blank line immediately
-          }
-        }
-        'Y' -> {
-          main.do_yy()
-          goto NAVCHARLOOP
-        }
-        'y' -> {
-          if main.MODE == mode.NAV {
-            YYLOOP:
-            void, char = cbm.GETIN()
-            when char {
-              $1b -> {       ; ESC key, throw into NAV mode from any other mode
-                toggle_nav()
-                goto NAVCHARLOOP
-              }
-              'y' -> {
-                main.do_yy()
-                goto NAVCHARLOOP
-              }
-            }
-            goto YYLOOP
-          }
-        }
-        'Z' -> {
-          if main.MODE == mode.NAV {
-            ; make sure we're not use editing a buffer
-            if @(doc.filepath+1) == $20 {
-              warn("No filename. Use :w filename")
-              goto NAVCHARLOOP
-            }
-            ZZLOOP:
-            void, char = cbm.GETIN()
-            if char == $00 {
-              goto ZZLOOP
-            }
-            when char {
-             $1b -> {       ; ESC key, throw into NAV mode from any other mode
-               toggle_nav()
-               goto NAVCHARLOOP
-             }
-             'Z' -> {
-                save_current_file()
-                txt.clear_screenchars($20)
-                txt.iso_off()
-                sys.exit(0)
-              }
-            }
-          }
-        }
-        'P' -> {
-          if main.MODE == mode.NAV {
-            main.paste_line_above()
-          }
-        }
-        'p' -> {
-          if main.MODE == mode.NAV {
-            main.paste_line_below()
-          }
-        }
-
-        ; E D I T I N G
-        'r' -> { ; replace char
-          if main.MODE == mode.NAV {
-            RLOOP1:
-            void, char = cbm.GETIN()
-            ; go back to RLOOP1 if there's nothing input via keyboard
-            if char == $00 {
-              goto RLOOP1
-            }
-            when char {
-              $1b -> {       ; ESC key, throw into NAV mode from any other mode
-                toggle_nav()
-                goto NAVCHARLOOP
-              }
-              else -> {
-                goto REPLACECHAR
-              }
-            }
-            goto RLOOP1
-            REPLACECHAR:
-            main.replace_char(char)
-          }
-        }
-        'x', $7f -> {  ; delete char, shift left - 'x' and $7 (backspace in NAV mode)
-          if main.MODE == mode.NAV {
-            main.delete_xy_shift_left()
-          }
-        }
-        's' -> {
-          if main.MODE == mode.NAV {
-            main.MODE = mode.INSERT
-            main.update_tracker()
-            main.insert_char_shift_right($20) ; initially just adds space, then drop to 'R'
-            main.MODE = mode.NAV
-            main.update_tracker()
-          }
-        }
-        'a','i' -> { ; append after cursor (vim-like)
-          if main.MODE == mode.NAV {
-            ISTART:
-            ; move one char right before inserting (append-after-cursor)
-            ubyte ac = view.c()
-            ubyte ar = view.r()
-            if ac < view.LEFT_MARGIN {
-              ac = view.LEFT_MARGIN
-            }
-            if ac < view.RIGHT_MARGIN-1 {
-              if char == 'a' {
-                cursor.place(ac+1, ar)
-              }
-              else if char == 'i' {
-                cursor.place(ac, ar)
-              }
-            }
-            else {
-              cursor.place(view.RIGHT_MARGIN-1, ar)
-            }
-
-            main.MODE = mode.INSERT
-            main.update_tracker()
-
-            ILOOP:
-            main.MODE = mode.INSERT
-            void, char = cbm.GETIN()
-            if char == $00 {
-              goto ILOOP
-            }
-
-            when char {
-              $1b -> {       ; <esc>
-                toggle_nav()
-                main.save_line_buffer()
-                goto NAVCHARLOOP
-              }
-              $0d -> {       ; <return> == esc + 'o'
-                toggle_nav()
-                main.save_line_buffer()
-                char = $6f ; 'o'
-                goto SKIP_NAVCHARLOOP
-              }
-              $14, $08, $7f -> {  ; backspace variants (DEL/BS)
-                goto IBACKSPACE
-              }
-              else -> {
-                ; only accept printable ISO range
-                if char < 32 or char > 126 {
-                  goto ILOOP
-                }
-                goto IINSERTCHAR
-              }
-            }
-            goto ILOOP
-
-            IBACKSPACE:
-            ; delete char to the left (vim-ish insert backspace)
-            if view.c() <= view.LEFT_MARGIN {
-              ; this preserves the behavior of vim when in insert mode
-              ; and hitting backspace, runs into the left margin, nothing
-              ; is done
-              goto ILOOP
-            }
-            cursor.saved_char = $20
-            cursor.restore_current_char();
-            txt.plot(view.c()-1, view.r())
-            cursor.place(view.c(), view.r())
-            main.delete_xy_shift_left()
-            main.update_tracker()
-            goto ILOOP
-
-            IINSERTCHAR:
-            ; keep cursor within editable region
-            if view.c() < view.LEFT_MARGIN {
-              txt.plot(view.LEFT_MARGIN, view.r())
-              cursor.place(view.c(),view.r())
-              main.update_tracker()
-              goto ILOOP
-            }
-            if view.c() == view.RIGHT_MARGIN {
-              txt.plot(view.RIGHT_MARGIN-1, view.r())
-              cursor.place(view.c(),view.r())
-              main.update_tracker()
-              goto ILOOP
-            }
-            main.insert_char_shift_right(char)
-            cursor.place(view.c()+1,view.r())
-            main.update_tracker()
-            goto ILOOP
-          }
-        }
-        'R' -> { ; replace mode
-          if main.MODE == mode.NAV {
-            main.MODE = mode.REPLACE
-            main.update_tracker()
-
-            RLOOP2:
-            main.MODE = mode.REPLACE
-            void, char = cbm.GETIN()
-            if char == $00 {
-              goto RLOOP2
-            }
-
-            when char {
-              $1b -> {       ; <esc>
-                toggle_nav()
-                main.save_line_buffer()
-                goto NAVCHARLOOP
-              }
-              $0d -> {       ; <return> == esc + 'o'
-                toggle_nav()
-                main.save_line_buffer()
-                char = $6f ; 'o'
-                goto SKIP_NAVCHARLOOP
-              }
-              $7f -> {                   ; <Delete> ($7f) in REPLACE mode acts like 'x' in NAV mode
-                main.delete_xy_shift_left()
-              }
-              $9d, $14, $08 -> {         ; left arrow, backspace variants act like 'h' in NAV mode
-                cursor_left_on_h()
-              }
-              else -> {
-                ; only accept printable ISO range
-                if char < 32 or char > 126 {
-                  goto RLOOP2
-                }
-                ; clear quote mode before emitting a quote
-                if char == $22 {
-                  cbm.CHROUT($80)
-                }
-                flags.UNSAVED = true
-                goto RPUTCHAR
-              }
-            }
-            goto RLOOP2
-
-            RPUTCHAR:
-            if view.c() < view.LEFT_MARGIN {
-              txt.plot(view.LEFT_MARGIN, view.r())
-              cursor.place(view.c(),view.r())
-              main.update_tracker()
-              goto RLOOP2
-            }
-            else if view.c() == view.RIGHT_MARGIN {
-              txt.plot(view.RIGHT_MARGIN-1, view.r())
-              cursor.place(view.c(),view.r())
-              main.update_tracker()
-              goto RLOOP2
-            }
-            cursor.saved_char = txt.getchr(view.c()+1,view.r())
-            cbm.CHROUT(char)
-            flags.UNSAVED = true
-            txt.plot(view.c(),view.r())
-            cursor.place(view.c(),view.r())
-            main.update_tracker()
-            goto RLOOP2
-          }
-        }
-
-        ; N A V I G A T I O N
-        '^','0','I' -> { ; jump to start of line
-          if main.MODE == mode.NAV {
-            jump_to_left()
-            if char == 'I' {
-              char = 'i'
-              goto ILOOP ; go now into insert mode
-            }
-          }
-        }
-        '$','A' -> { ; jump top end of line
-          if main.MODE == mode.NAV {
-            jump_to_right()
-            if char == 'A' {
-              char = 'a'
-              goto ISTART ; go now into insert mode
-            }
-          }
-        }
-        '1' -> { ; 1G
-          if main.MODE == mode.NAV {
-            gLOOP:
-            void, char = cbm.GETIN()
-            when char {
-              $1b -> {       ; ESC key, throw into NAV mode from any other mode
-                toggle_nav()
-                goto NAVCHARLOOP
-              }
-              'G' -> {
-                jump_to_begin()
-                goto NAVCHARLOOP
-              }
-            }
-            goto gLOOP
-          }
-        }
-        'g' -> {
-          if main.MODE == mode.NAV {
-            jump_to_begin()
-          }
-        }
-        'G' -> {
-          if main.MODE == mode.NAV {
-            jump_to_end()
-          }
-        }
-        'L' -> { ; redraw current screen
-          if main.MODE == mode.NAV {
-            ubyte c = view.c()
-            ubyte r = view.r()
-            draw_screen()
-            txt.plot(c, r)
-            cursor.replace(c, r)
-            main.update_tracker()
-          }
-        }
-        'k',$91 -> {       ;  UP
-          if main.MODE == mode.NAV {
-            cursor_up_on_k()
-          }
-        }
-        'j', $11 -> {      ; DOWN
-          if main.MODE == mode.NAV {
-            cursor_down_on_j()
-          }
-        }
-        'h', $9d, $14, $08 -> {     ; LEFT, h, left arrow, backspace variants (<Delete> acts like 'x')
-          if main.MODE == mode.NAV {
-            cursor_left_on_h()
-          }
-        }
-        'l',$20,$1d -> {   ; RIGHT
-          if main.MODE == mode.NAV {
-            cursor_right_on_l()
-          }
-        }
-        $06,$46 -> {  ; ctrl+f / shift+f
-          if main.MODE == mode.NAV {
-            page_forward()
-          }
-        }
-        $02,$42 -> {  ; ctrl+b / shift+b
-          if main.MODE == mode.NAV {
-            page_backward()
-          }
+        ':'  -> {
+          flags.FIRST_COMMAND = true
+          command.prompt()        ; populates command.cmdBuffer
+          goto main.key_mode_nav.PROCESS_COMMAND
         }
       }
-      goto NAVCHARLOOP
+
+      ; "goto" dispatcher on edit or command modes
+      when char {
+        'R'  -> { goto main.key_mode_nav.RLOOP2 }
+        'i'  -> { goto main.key_mode_nav.ILOOP  }
+        'a'  -> { goto main.key_mode_nav.ILOOP  }
+      }
+
+  }
+
+  sub key_mode_nav() {
+    when char {
+      '0' to '9' -> {
+        if char == '0' {
+          if last_char < '0' or last_char > '9' {
+            jump_to_left()
+            return
+          }
+        }
+        numbers = (numbers * 10) + (char - '0')
+     }
+      ; N A V I G A T I O N
+      '^','I' -> { ; jump to start of line
+        jump_to_left()
+        if char == 'I' {
+          char = 'i'
+          goto ILOOP ; go now into insert mode
+        }
+      }
+      '$','A' -> { ; jump top end of line
+        jump_to_right()
+        if char == 'A' {
+          char = 'a'
+          goto ISTART ; go now into insert mode
+        }
+      }
+      ':' -> {                       ; command line
+        command.prompt()             ; populates command.cmdBuffer
+
+        PROCESS_COMMAND:
+        ; clear command line
+        txt.plot(0, view.FOOTER_LINE)
+        prints(view.BLANK_LINE79)
+        main.update_tracker()
+        command.process()
+
+        ;debug.assert(main.lineCount, 93, debug.EQ, "ln 515 ... main.lineCount == 93")
+        toggle_nav()
+        cursor.replace(col, row)
+        main.update_tracker()
+      }
+      'D' -> {
+        main.clear_current_line()
+      }
+      'd' -> {
+        ; do_dd() should handle numbers
+        if last_char == 'd' {
+          char = 0
+          if numbers == 0 {
+            main.do_dd()
+          } else {
+            repeat numbers {
+              main.do_dd()
+            }
+            numbers = 0
+          }
+          return
+        }
+      }
+      'O' -> {
+        main.insert_line_above()
+        goto RLOOP2 ; REPLACE mode, start editing blank line immediately
+      }
+      'o' -> {
+        main.insert_line_below()
+        goto RLOOP2 ; REPLACE mode, start editing blank line immediately
+      }
+      'Y' -> {
+        main.do_yy()
+        return
+      }
+      'y' -> {
+        if last_char == 'y' {
+          char = 0
+          main.do_yy()
+          return
+        }
+      }
+      'Z' -> {
+        if last_char == 'Z' {
+          char = 0
+          ; make sure we're not use editing a buffer
+          if @(doc.filepath+1) == $20 {
+            warn("No filename. Use :w filename")
+            return
+          }
+          save_current_file()
+          txt.clear_screenchars($20)
+          txt.iso_off()
+          sys.exit(0)
+        }
+      }
+      'P' -> {
+        main.paste_line_above()
+      }
+      'p' -> {
+        main.paste_line_below()
+      }
+      ; E D I T I N G
+      'r' -> { ; replace char
+        RLOOP1:
+        void, char = cbm.GETIN()
+        ; go back to RLOOP1 if there's nothing input via keyboard
+        if char == $00 {
+          goto RLOOP1
+        }
+        when char {
+          $1b -> {       ; ESC key, throw into NAV mode from any other mode
+            toggle_nav()
+            return
+          }
+          else -> {
+            goto REPLACECHAR
+          }
+        }
+        goto RLOOP1
+        REPLACECHAR:
+        main.replace_char(char)
+      }
+      'x', $7f -> {  ; delete char, shift left - 'x' and $7 (backspace in NAV mode)
+        main.delete_xy_shift_left()
+      }
+      'R' -> { ; replace mode
+        main.MODE = mode.REPLACE
+        main.update_tracker()
+
+        RLOOP2:
+        main.MODE = mode.REPLACE
+        void, char = cbm.GETIN()
+        if char == $00 {
+          goto RLOOP2
+        }
+        when char {
+          $1b -> {       ; <esc>
+            toggle_nav()
+            main.save_line_buffer()
+            return
+          }
+          $0d -> {       ; <return> == esc + 'o'
+            toggle_nav()
+            main.save_line_buffer()
+            char = $6f ; 'o'
+            goto main.start.SKIP_NAVCHARLOOP
+          }
+          $7f -> {                   ; <Delete> ($7f) in REPLACE mode acts like 'x' in NAV mode
+            main.delete_xy_shift_left()
+          }
+          $9d, $14, $08 -> {         ; left arrow, backspace variants act like 'h' in NAV mode
+            cursor_left_on_h()
+          }
+          else -> {
+            ; only accept printable ISO range
+            if char < 32 or char > 126 {
+              goto RLOOP2
+            }
+            ; clear quote mode before emitting a quote
+            if char == $22 {
+              cbm.CHROUT($80)
+            }
+            flags.UNSAVED = true
+            goto RPUTCHAR
+          }
+        }
+        goto RLOOP2
+
+        RPUTCHAR:
+        if view.c() < view.LEFT_MARGIN {
+          txt.plot(view.LEFT_MARGIN, view.r())
+          cursor.place(view.c(),view.r())
+          main.update_tracker()
+          goto RLOOP2
+        }
+        else if view.c() == view.RIGHT_MARGIN {
+          txt.plot(view.RIGHT_MARGIN-1, view.r())
+          cursor.place(view.c(),view.r())
+          main.update_tracker()
+          goto RLOOP2
+        }
+        cursor.saved_char = txt.getchr(view.c()+1,view.r())
+        cbm.CHROUT(char)
+        flags.UNSAVED = true
+        txt.plot(view.c(),view.r())
+        cursor.place(view.c(),view.r())
+        main.update_tracker()
+        goto RLOOP2
+      }
+      's' -> {
+        main.MODE = mode.INSERT
+        main.update_tracker()
+        main.insert_char_shift_right($20) ; initially just adds space, then drop to 'R'
+        main.MODE = mode.NAV
+        main.update_tracker()
+      }
+      'L' -> { ; redraw current screen
+        ubyte c = view.c()
+        ubyte r = view.r()
+        draw_screen()
+        txt.plot(c, r)
+        cursor.replace(c, r)
+        main.update_tracker()
+      }
+      'a','i' -> { ; append after cursor (vim-like)
+        ISTART:
+        ; move one char right before inserting (append-after-cursor)
+        ubyte ac = view.c()
+        ubyte ar = view.r()
+        if ac < view.LEFT_MARGIN {
+          ac = view.LEFT_MARGIN
+        }
+        if ac < view.RIGHT_MARGIN-1 {
+          if char == 'a' {
+            cursor.place(ac+1, ar)
+          }
+          else if char == 'i' {
+            cursor.place(ac, ar)
+          }
+        }
+        else {
+          cursor.place(view.RIGHT_MARGIN-1, ar)
+        }
+
+        main.MODE = mode.INSERT
+        main.update_tracker()
+
+        ILOOP:
+        main.MODE = mode.INSERT
+        void, char = cbm.GETIN()
+        if char == $00 {
+          goto ILOOP
+        }
+        when char {
+          $1b -> {       ; <esc>
+            toggle_nav()
+            main.save_line_buffer()
+            return
+          }
+          $0d -> {       ; <return> == esc + 'o'
+            toggle_nav()
+            main.save_line_buffer()
+            char = $6f ; 'o'
+            goto main.start.SKIP_NAVCHARLOOP
+          }
+          $14, $08, $7f -> {  ; backspace variants (DEL/BS)
+            goto IBACKSPACE
+          }
+          else -> {
+            ; only accept printable ISO range
+            if char < 32 or char > 126 {
+              goto ILOOP
+            }
+            goto IINSERTCHAR
+          }
+        }
+        goto ILOOP
+
+        IBACKSPACE:
+        ; delete char to the left (vim-ish insert backspace)
+        if view.c() <= view.LEFT_MARGIN {
+          ; this preserves the behavior of vim when in insert mode
+          ; and hitting backspace, runs into the left margin, nothing
+          ; is done
+          goto ILOOP
+        }
+        cursor.saved_char = $20
+        cursor.restore_current_char();
+        txt.plot(view.c()-1, view.r())
+        cursor.place(view.c(), view.r())
+        main.delete_xy_shift_left()
+        main.update_tracker()
+        goto ILOOP
+
+        IINSERTCHAR:
+        ; keep cursor within editable region
+        if view.c() < view.LEFT_MARGIN {
+          txt.plot(view.LEFT_MARGIN, view.r())
+          cursor.place(view.c(),view.r())
+          main.update_tracker()
+          goto ILOOP
+        }
+        if view.c() == view.RIGHT_MARGIN {
+          txt.plot(view.RIGHT_MARGIN-1, view.r())
+          cursor.place(view.c(),view.r())
+          main.update_tracker()
+          goto ILOOP
+        }
+        main.insert_char_shift_right(char)
+        cursor.place(view.c()+1,view.r())
+        main.update_tracker()
+        goto ILOOP
+    }
+      'g' -> {
+        jump_to_begin()
+      }
+      'G' -> {
+        jump_to_line(numbers)
+        numbers = 0
+      }
+      'k',$91 -> cursor_up_on_k()                 ; UP
+      'j', $11 -> cursor_down_on_j()              ; DOWN
+      'h', $9d, $14, $08 -> cursor_left_on_h()    ; LEFT, h, left arrow, backspace variants (<Delete> acts like 'x')
+      'l',$20,$1d -> cursor_right_on_l()          ; RIGHT
+
+      $06,$46 -> page_forward()                   ; ctrl+f / shift+f
+      $02,$42 -> page_backward()                  ; ctrl+b / shift+b
+    }
+  }
+
+  sub key_mode_insert() {
+    when char {
+      'a','i' -> { ; append after cursor (vim-like)
+        ISTART:
+        ; move one char right before inserting (append-after-cursor)
+        ubyte ac = view.c()
+        ubyte ar = view.r()
+        if ac < view.LEFT_MARGIN {
+          ac = view.LEFT_MARGIN
+        }
+        if ac < view.RIGHT_MARGIN-1 {
+          if char == 'a' {
+            cursor.place(ac+1, ar)
+          }
+          else if char == 'i' {
+            cursor.place(ac, ar)
+          }
+        }
+        else {
+          cursor.place(view.RIGHT_MARGIN-1, ar)
+        }
+
+        main.MODE = mode.INSERT
+        main.update_tracker()
+
+        ILOOP:
+        main.MODE = mode.INSERT
+        void, char = cbm.GETIN()
+        if char == $00 {
+          goto ILOOP
+        }
+        when char {
+          $1b -> {       ; <esc>
+            toggle_nav()
+            main.save_line_buffer()
+            return
+          }
+          $0d -> {       ; <return> == esc + 'o'
+            toggle_nav()
+            main.save_line_buffer()
+            char = $6f ; 'o'
+            goto main.start.SKIP_NAVCHARLOOP
+          }
+          $14, $08, $7f -> {  ; backspace variants (DEL/BS)
+            goto IBACKSPACE
+          }
+          else -> {
+            ; only accept printable ISO range
+            if char < 32 or char > 126 {
+              goto ILOOP
+            }
+            goto IINSERTCHAR
+          }
+        }
+        goto ILOOP
+
+        IBACKSPACE:
+        ; delete char to the left (vim-ish insert backspace)
+        if view.c() <= view.LEFT_MARGIN {
+          ; this preserves the behavior of vim when in insert mode
+          ; and hitting backspace, runs into the left margin, nothing
+          ; is done
+          goto ILOOP
+        }
+        cursor.saved_char = $20
+        cursor.restore_current_char();
+        txt.plot(view.c()-1, view.r())
+        cursor.place(view.c(), view.r())
+        main.delete_xy_shift_left()
+        main.update_tracker()
+        goto ILOOP
+
+        IINSERTCHAR:
+        ; keep cursor within editable region
+        if view.c() < view.LEFT_MARGIN {
+          txt.plot(view.LEFT_MARGIN, view.r())
+          cursor.place(view.c(),view.r())
+          main.update_tracker()
+          goto ILOOP
+        }
+        if view.c() == view.RIGHT_MARGIN {
+          txt.plot(view.RIGHT_MARGIN-1, view.r())
+          cursor.place(view.c(),view.r())
+          main.update_tracker()
+          goto ILOOP
+        }
+        main.insert_char_shift_right(char)
+        cursor.place(view.c()+1,view.r())
+        main.update_tracker()
+        goto ILOOP
+      }
+    }
+  }
+
+  sub key_mode_replace() {
+  }
+
+  sub key_mode_command() {
   }
 
   sub get_line_num(ubyte r) -> uword {
     const uword top = mkword(00,view.TOP_LINE)
-    uword row       = mkword(00,r)
-    uword curr_line = view.CURR_TOP_LINE + row - top
+    uword trow       = mkword(00,r)
+    uword curr_line = view.CURR_TOP_LINE + trow - top
     return curr_line
   }
 
@@ -1618,11 +1645,11 @@ main {
       return view.LEFT_MARGIN
     }
 
-    uword col = view.LEFT_MARGIN + last
-    if col > view.RIGHT_MARGIN {
-      col = view.RIGHT_MARGIN
+    uword tcol = view.LEFT_MARGIN + last
+    if tcol > view.RIGHT_MARGIN {
+      tcol = view.RIGHT_MARGIN
     }
-    return col as ubyte
+    return tcol as ubyte
   }
 
   ; $
@@ -1668,6 +1695,29 @@ main {
         cursor.place(view.LEFT_MARGIN, (main.lineCount as ubyte) + 1)
       }
       main.update_tracker()
+  }
+
+  sub jump_to_line(uword tline) {
+    if tline == 0 or tline > main.lineCount {
+      jump_to_end()
+      return
+    }
+    if tline == 1 {
+      jump_to_begin()
+      return
+    }
+    ; destination is on the screen
+    if tline > view.CURR_TOP_LINE and tline < (view.CURR_TOP_LINE + view.HEIGHT) {
+      cursor.place(view.LEFT_MARGIN, (tline - view.CURR_TOP_LINE) as ubyte + view.TOP_LINE)
+      main.update_tracker()
+      return
+    }
+    if tline < view.CURR_TOP_LINE or tline > (view.CURR_TOP_LINE + view.TOP_LINE + view.HEIGHT) {
+      view.CURR_TOP_LINE = tline
+      draw_screen()
+      cursor.replace(view.LEFT_MARGIN, view.TOP_LINE)
+    }
+    main.update_tracker()
   }
 
   sub cursor_up_on_k () {
@@ -1808,9 +1858,9 @@ main {
   }
 
   ; in NAV mode, `r <char>`
-  sub replace_char(ubyte char) {
+  sub replace_char(ubyte tchar) {
     ; accept only printable ISO
-    if char < 32 or char > 126 {
+    if tchar < 32 or tchar > 126 {
       return
     }
 
@@ -1831,9 +1881,9 @@ main {
     ^^Line curr_addr = get_Line_addr(r)    ; gets memory addr of current Line
 
     ; replace char at (c,r)
-    @(curr_addr.text + (c - view.LEFT_MARGIN)) = char
+    @(curr_addr.text + (c - view.LEFT_MARGIN)) = tchar
     @(curr_addr.text + MaxLength) = 0       ; null terminate
-    cursor.saved_char = char
+    cursor.saved_char = tchar
 
     ; redraw line
     void redraw_line(curr_addr, r)
@@ -1843,9 +1893,9 @@ main {
     main.update_tracker()
   }
 
-  sub insert_char_shift_right(ubyte char) {
+  sub insert_char_shift_right(ubyte tchar) {
     ; accept only printable ISO
-    if char < 32 or char > 126 {
+    if tchar < 32 or tchar > 126 {
       return
     }
 
@@ -1867,11 +1917,11 @@ main {
       @(curr_addr.text + (i - view.LEFT_MARGIN)) = @(curr_addr.text + (i - view.LEFT_MARGIN - 1))
     }
 
-    @(curr_addr.text + (c - view.LEFT_MARGIN)) = char
+    @(curr_addr.text + (c - view.LEFT_MARGIN)) = tchar
     @(curr_addr.text + MaxLength) = 0       ; null terminate
     flags.UNSAVED = true
 
-    cursor.saved_char = char
+    cursor.saved_char = tchar
 
     void redraw_line(curr_addr, r)
 
