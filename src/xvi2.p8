@@ -29,6 +29,9 @@
 ; - fast "save_line_buffer"
 
 ; DONE:
+; - added <ESC> as cancel when in command mode
+; - adding a non-supported command in command mode messed up the bottom footer,
+; - this is fixed
 ; - verify as part of that, "~" is not present at the start in some cases, fix that
 ; - wq! - force save, force save and quit
 ; - add checks around wq, wq! (buffer, first command?)
@@ -190,7 +193,7 @@ command {
 
   sub prompt () {
     ubyte cmdchar
-   cursor.hide()
+    cursor.hide()
     void strings.copy(" " * 60, cmdBuffer)
     txt.plot(0, view.FOOTER_LINE) ; move cursor to the starting position for writing
     main.prints(view.BLANK_LINE79)
@@ -198,7 +201,14 @@ command {
     txt.print(":")
   CMDINPUT:
     void, cmdchar = cbm.GETIN()
-    if cmdchar != $0d { ; any character now but <ENTER>
+    if cmdchar == $1b {  ; ESC key, get out of command mode
+      txt.plot(0, view.FOOTER_LINE) ; move cursor to the starting position for writing
+      main.prints(view.BLANK_LINE79)
+      txt.plot(0, view.FOOTER_LINE)
+      main.update_tracker()
+      goto main.start.NAVCHARLOOP  ; start main loop
+    }
+    if cmdchar != $0d {       ; any character now but <ENTER>
       if cmdchar == $22 {
         cbm.CHROUT($80)
       }
@@ -212,7 +222,7 @@ command {
         cmdBuffer[i] = txt.getchr(i+1, view.FOOTER_LINE)
       }
       strings.strip(command.cmdBuffer)
-      return;
+      return
     }
     goto CMDINPUT
   }
@@ -321,8 +331,12 @@ command {
         }
       }
       else -> {
-        cursor.place(view.LEFT_MARGIN, view.TOP_LINE)
         main.warn("Not an editor command!")
+        txt.plot(0, view.FOOTER_LINE) ; move cursor to the starting position for writing
+        main.prints(view.BLANK_LINE79)
+        txt.plot(0, view.FOOTER_LINE)
+        main.update_tracker()
+        goto main.start.NAVCHARLOOP  ; start main loop
       }
     }
   }
@@ -665,7 +679,6 @@ main {
 
     sys.wait(20)
 
-
     ;txt.plot(0,1)
     ;cursor.place(view.LEFT_MARGIN, view.TOP_LINE)
 
@@ -745,7 +758,7 @@ main {
           }
         }
         numbers = (numbers * 10) + (char - '0')
-     }
+      }
       ; N A V I G A T I O N
       '^','I' -> { ; jump to start of line
         jump_to_left()
@@ -1024,7 +1037,7 @@ main {
         cursor.place(view.c()+1,view.r())
         main.update_tracker()
         goto ILOOP
-    }
+      }
       'g' -> {
         jump_to_begin()
       }
