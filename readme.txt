@@ -37,7 +37,7 @@ REPLACE mode:
  
 Status indicator:
  
-"-- INSERT --" or "--REPLACE --" appears on screen.
+"-- INSERT --" or "-- REPLACE --" appears on screen.
  
 ------------------------------------------------------------------------
 NAVIGATION
@@ -133,7 +133,7 @@ Double-quote handling:
  
 If quotes or symboles behave strangely,report: ...
  
- - Mode (INSERT / REPLACE)                                                  
- - Keys typed                                                               
- - Emulator vs real hardware                                                
-                                                                            
+ - Mode (INSERT / REPLACE)
+ - Keys typed
+ - Emulator vs real hardware
+ 
