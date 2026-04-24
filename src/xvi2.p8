@@ -548,7 +548,7 @@ main {
     }
     say("~                             XVI - Commander X16 Vi               ")
     say("~                                                                  ")
-    say("~                                version 2.0 ALPHA                 ")
+    say("~                                version 2.0.RC-0                  ")
     say("~                                                                  ")
     say("~                      by Brett Estrade, Andrew Gillham, et al.    ")
     say("~                                                                  ")
