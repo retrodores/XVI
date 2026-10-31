@@ -2,10 +2,13 @@
 ; docs/TEXT-STORE.md).  This is the part of xvi2 that doesn't depend on the
 ; target: no screen, no keys.  The block is called doctext.
 ;
-; xvi2 edits a fixed width copy of one line: fetch() fills it, padded with
-; spaces, and commit() puts it back.  Everything else about the line is the
-; store's business, so the store can be swapped (only pointers from
-; read_room() and chunk() are used, and none is kept over a store call).
+; xvi2 sees a line through a window of WIDTH columns, from first_col: fetch()
+; fills a copy of them, padded with spaces, and commit() puts it back.  The
+; window pans over longer lines.  Changes to a line's length go straight to
+; the store (insert_at(), delete_at(), delete_to_end()), so what is past the
+; window stays.  Everything else about the line is the store's business, so
+; the store can be swapped (only pointers from read_room() and chunk() are
+; used, and none is kept over a store call).
 ;
 ; Line numbers count from 1, like xvi2's.  There is always a line: the empty
 ; text is one empty line.  The line ending after the last line isn't in the
@@ -14,16 +17,19 @@
 %import diskio
 %import gapbuffer
 %import strings
+%import xvi_platform
 
 doctext {
-    ; the columns of a line that can be seen and edited.  a longer line keeps
-    ; the rest, it is just not shown.
-    const ubyte WIDTH = 76
+    ; the columns of a line that can be seen at once
+    const ubyte WIDTH = plat.TEXT_WIDTH
+    ; how far the window moves when the cursor reaches its edge
+    const ubyte PAN = WIDTH / 2
     ; xvi2 yanks a line at a time
     const uword YANK_SIZE = 1024
 
     uword count         ; the number of lines
     bool truncated      ; the last load() ran out of memory
+    uword first_col     ; the first column of the window (from 0)
 
     ; a line whose position is known, so walking to the next line doesn't
     ; start from the top of the text.  it is only valid while buffer.changes
@@ -51,6 +57,7 @@ doctext {
     sub clear() {
         buffer.clear()
         count = 1
+        first_col = 0
         remember(1, 0)
     }
 
@@ -78,42 +85,110 @@ doctext {
         return cache_pos
     }
 
-    ; copy a line to dest (WIDTH + 1 bytes): WIDTH characters, padded with
-    ; spaces, and a 0.  a line that doesn't exist comes out blank.
+    ; returns the length of a line, 0 if there is no such line
+    sub length(uword line) -> uword {
+        uword start = pos(line)
+        if start == buffer.NONE
+            return 0
+        return buffer.line_end(start) - start
+    }
+
+    ; copy the window on a line to dest (WIDTH + 1 bytes): WIDTH characters,
+    ; padded with spaces, and a 0.  a line that doesn't exist, or ends before
+    ; the window, comes out blank.
     sub fetch(uword line, pointer dest) {
-        uword position = pos(line)
+        uword n = length(line)
         sys.memset(dest, WIDTH, $20)
         dest[WIDTH] = 0
-        if position != buffer.NONE {
-            dest[buffer.copy_line(position, dest, WIDTH)] = $20
-            dest[WIDTH] = 0
+        if n > first_col {
+            n -= first_col
+            if n > WIDTH
+                n = WIDTH
+            void buffer.copy_out(cache_pos + first_col, n, dest)
         }
     }
 
     ; replace what fetch() gave for a line with the WIDTH characters at text.
-    ; spaces at the end of them are dropped; what is past WIDTH in a longer
-    ; line stays.  returns false, with the line as it was, if it doesn't fit.
+    ; spaces at the end go, unless the line goes on past the window: then
+    ; the columns are replaced one for one.  a line that ends before the
+    ; window gets spaces up to it.  returns false, with the line as it was,
+    ; if it doesn't fit.
     sub commit(uword line, pointer text) -> bool {
         uword start = pos(line)
-        uword old_len
+        uword line_len
+        uword pad = 0
+        ubyte old_len = 0
         ubyte new_len = WIDTH
         if start == buffer.NONE
             return true
-        old_len = buffer.line_end(start) - start
-        if old_len > WIDTH
+        line_len = buffer.line_end(start) - start
+        if line_len > first_col + WIDTH
             old_len = WIDTH
-        while new_len != 0 and text[new_len - 1] == $20
-            new_len--
-        if new_len == old_len and (new_len == 0 or buffer.match_at(text, new_len, start))
+        else {
+            while new_len != 0 and text[new_len - 1] == $20
+                new_len--
+            if line_len > first_col
+                old_len = (line_len - first_col) as ubyte
+            else if new_len != 0
+                pad = first_col - line_len
+        }
+        if new_len == old_len and (new_len == 0 or buffer.match_at(text, new_len, start + first_col))
             return true
-        if buffer.free() + old_len < new_len
+        if buffer.free() + old_len < new_len + pad
             return false
+        repeat pad
+            void buffer.insert_char($20, start + line_len)
         if old_len != 0
-            void buffer.delete_nchar(old_len, start)
+            void buffer.delete_nchar(old_len, start + first_col)
         if new_len != 0
-            void buffer.insert_bytes(text, new_len, start)
+            void buffer.insert_bytes(text, new_len, start + first_col)
         remember(line, start)
         return true
+    }
+
+    ; insert a character at column col of the window, with spaces first if
+    ; the line ends before it.  returns false if there's no room.
+    sub insert_at(uword line, ubyte col, ubyte c) -> bool {
+        uword start = pos(line)
+        uword line_len
+        uword target = first_col + col
+        uword pad = 0
+        if start == buffer.NONE
+            return true
+        line_len = buffer.line_end(start) - start
+        if target > line_len
+            pad = target - line_len
+        if buffer.free() < pad + 1
+            return false
+        repeat pad
+            void buffer.insert_char($20, start + line_len)
+        void buffer.insert_char(c, start + target)
+        remember(line, start)
+        return true
+    }
+
+    ; delete the character at column col of the window
+    sub delete_at(uword line, ubyte col) {
+        uword start = pos(line)
+        uword target = first_col + col
+        if start != buffer.NONE and target < buffer.line_end(start) - start {
+            void buffer.delete_char(start + target)
+            remember(line, start)
+        }
+    }
+
+    ; delete from column col of the window to the end of the line
+    sub delete_to_end(uword line, ubyte col) {
+        uword start = pos(line)
+        uword target = first_col + col
+        uword end
+        if start != buffer.NONE {
+            end = buffer.line_end(start)
+            if target < end - start {
+                void buffer.delete_range(start + target, end)
+                remember(line, start)
+            }
+        }
     }
 
     ; a new empty line becomes the given line (up to count + 1, after the
@@ -204,9 +279,10 @@ doctext {
         uword kept
         uword position = 0
         ubyte extra
-        if not diskio.f_open(name)
+        if not plat.open_read(name)
             return false
         buffer.clear()
+        first_col = 0
         after_cr = false
         truncated = false
         ; (the gap buffer gives all its room at once)
@@ -261,7 +337,7 @@ doctext {
         uword n
         ubyte i
         bool ok = true
-        if not diskio.f_open_w(name)
+        if not plat.open_write(name)
             return false
         for i in 0 to buffer.chunks() - 1 {
             p, n = buffer.chunk(i)
@@ -271,6 +347,6 @@ doctext {
         if not diskio.f_write(&buffer.eol, 1)
             ok = false
         diskio.f_close_w()
-        return ok
+        return ok and plat.write_ok()
     }
 }
