@@ -1,12 +1,6 @@
 ;
 ; vim:set softtabstop=2 shiftwidth=2 expandtab:
 ;
-; BUGS:
-; - dd bug
-; -- 1. open a file, immediately jump to the botton
-; -- 2. add a few lines at the bottom with 'o', typing some
-; -- 3. hit <esc>, then do "dd"
-
 ; TODO:
 ; - add 'dG' for (gillham)
 ; - isolate remaining cursor issues
@@ -21,7 +15,6 @@
 
 ; FUTURE TODO:
 ; - ":/" (requested by Sam)
-; - allow many more lines (convert Line to use str instead permanent line)
 ; - do not write contiguous spaces (fully blank line, trim when writing)
 ; -- this might be an optimization that is needed when we increase line
 ; -- support > 140
@@ -47,6 +40,7 @@
 %import syslib
 %import diskio
 %import debug
+%import xvitext
 ;;; %import messages
 
 mode {
@@ -75,8 +69,6 @@ view {
   str         BLANK_LINE79    = " " * 79
   str         BLANK_LINE76    = " " * 76
   uword       CURR_TOP_LINE   = 1  ; tracks which actual doc line is at TOP_LINE
-  uword[main.MaxLines] INDEX       ; Line to address look up
-  uword       CLIPBOARD       = 0  ; holds the address of the current line we can "paste"
 
   sub r() -> ubyte {
     return txt.get_row()
@@ -84,57 +76,6 @@ view {
 
   sub c() -> ubyte {
     return txt.get_column()
-  }
-
-  sub insert_line_before (uword new_addr, uword curr_line, uword lineCount) -> uword {
-    uword newLineCount = lineCount + 1    ; new line count
-    uword curr_idx     = curr_line - 1    ; array index in view.INDEX to put the new line addres
-    uword last_idx     = newLineCount - 1 ; idx of the last line in the document
-
-    uword i
-    ; Note: the range decrements by 1 from last_idx to the idx right before new_idx,
-    ; which is new_idx+1, since we're decrementing; ensures old contents in new_idx
-    ; get copied into the slot 'below' it ...
-    for i in last_idx downto curr_idx+1 step -1 {
-      ubyte idx = i as ubyte
-      view.INDEX[idx] = view.INDEX[idx-1]
-    }
-
-    ; finally, insert new address into the new_idx slot
-    view.INDEX[curr_idx as ubyte] = new_addr
-
-    return newLineCount
-  }
-
-  sub insert_line_after (uword new_addr, uword curr_line, uword lineCount) -> uword {
-    uword next_line    = curr_line + 1    ; next line number
-    uword newLineCount = lineCount + 1    ; new line count
-    uword new_idx      = next_line - 1    ; array index in view.INDEX to put the new line addres
-    uword last_idx     = newLineCount - 1 ; idx of the last line in the document
-
-    uword i
-    ; Note: the range decrements by 1 from last_idx to the idx right before new_idx,
-    ; which is new_idx+1, since we're decrementing; ensures old contents in new_idx
-    ; get copied into the slot 'below' it ...
-    for i in last_idx downto new_idx+1 step -1 {
-      ubyte idx = i as ubyte
-      view.INDEX[idx] = view.INDEX[idx-1]
-    }
-
-    ; finally, insert new address into the new_idx slot
-    view.INDEX[new_idx as ubyte] = new_addr
-
-    return newLineCount
-  }
-
-  sub delete_item (uword curr_line, uword lineCount) -> uword {
-    uword newLineCount = lineCount - 1
-    uword i
-    for i in curr_line-1 to newLineCount {
-      ubyte idx = i as ubyte
-      view.INDEX[idx] = view.INDEX[idx + 1]
-    }
-    return newLineCount
   }
 }
 
@@ -312,8 +253,9 @@ command {
           }
           else {
             diskio.delete(fn1)
-            main.save_as(fn1)
-            void strings.copy(fn1, main.doc.filepath)
+            if main.save_as(fn1) {
+              void strings.copy(fn1, main.doc.filepath)
+            }
           }
         }
         else {
@@ -344,7 +286,6 @@ command {
 main {
   ubyte MODE         = mode.NAV ; initial mode is NAV
   uword NAVCHARCOUNT = 0        ; the main "clock"
-  uword lineCount
 
   struct Document {
     ubyte tabNum    ; 0
@@ -366,9 +307,8 @@ main {
     ubyte nullbyte
   }
 
+  ; the working copy of one line: see get_Line_addr()
   struct Line {
-    ^^Line prev
-    ^^Line next
     ^^ubyte text
     ubyte data00, data01, data02, data03, data04, data05, data06, data07
     ubyte data08, data09, data10, data11, data12, data13, data14, data15
@@ -382,83 +322,20 @@ main {
     ubyte data72, data73, data74, data75, nullbyte
   }
 
-  ^^Document doc
+  ^^Document doc = memory("doc", sizeof(Document), 1)
 
-  const uword MaxLength  = 76
-  const uword LineSize   = sizeof(Line)
+  const uword MaxLength  = doctext.WIDTH
+  const uword TextTop    = $9f00          ; the text goes from the end of the program up to here
 
-  const uword MaxLines   = 256
-  const uword BufferSize = MaxLines * LineSize
-  uword Buffer           = memory("Buffer", BufferSize, 1)
+  ^^Line scratch = memory("scratch", sizeof(Line), 1)
 
-  ^^Line next = Buffer
-  ^^Line head = 0 ; points to first line
-  ^^Line tail = 0 ; points to last line
-
-  ; Allocator for linked list of Line instances contributed
-  ; by MarkTheStrange on #prog8-dev
-  sub allocLine(^^ubyte initial) -> ^^Line {
-    ^^Line this = next                   ; return next space
-    ; don't run past end of Buffer
-    if next > (Buffer+BufferSize-LineSize) return $0000
-    next += 1                            ; advance by sizeof struct
-    ; link the new line in
-    if head == 0 {
-        head = this
-    } else {
-        tail.next = this
-    }
-
-    ; populate the fields
-    this.prev = tail
-    this.next = 0
-    this.text = &this.data00            ; text buffer embedded in struct
-    void strings.copy(initial, this.text)
-    @(this.text + MaxLength) = 0         ; null terminate
-
-    tail = this
-    ; and return
-    return this
-  }
-
-  sub allocNewLine(^^ubyte initial) -> ^^Line {
-    ^^Line this = next                   ; return next space
-    ; don't run past end of Buffer
-    if next > (Buffer+BufferSize-LineSize) return $0000
-    next += 1                            ; advance by sizeof struct
-    ; populate the fields
-    this.prev = 0
-    this.next = 0
-    this.text = &this.data00            ; text buffer embedded in struct
-    strings.rstrip(initial)
-    void strings.copy(view.BLANK_LINE79, this.text) ; initialize with BLANK_LINE79, eliminates random garbage
-    void strings.copy(initial, this.text); then add text
-    @(this.text + MaxLength) = 0         ; null terminate
-    return this
-  }
-
-  sub freeAll() {
-    next = Buffer
-    sys.memset(next, BufferSize, 0)
-  }
+  alias lineCount = doctext.count
 
   ; initiates initial buffer without a file, jumps to REPLACEMODE
   ; so user can start typing right away
   sub init_empty_buffer(ubyte lines) {
-    freeAll()
+    doctext.clear()
     txt.plot(view.LEFT_MARGIN, view.TOP_LINE)
-    flags.UNSAVED = false
-    main.lineCount = 0
-
-    ubyte idx   = 0
-    str lineBuffer  = " " * (MaxLength + 1)
-
-    repeat lines {
-      uword lineAddr = allocLine(lineBuffer)
-      idx = main.lineCount as ubyte
-      view.INDEX[idx] = lineAddr
-      main.lineCount++
-    }
     flags.UNSAVED = true
     main.draw_screen()
     cursor.place(view.LEFT_MARGIN, view.TOP_LINE)
@@ -476,64 +353,16 @@ main {
 
     info("Loading file ...")
 
-    ; only do this if file wanted is found
-    freeAll()
-
-    flags.UNSAVED = false
-    main.lineCount = 0
-
-    ubyte idx   = 0
-    READFILE:
-    cbm.CLEARST() ; set so READST() is initially known to be clear
-    if diskio.f_open(filepath) {
-      while cbm.READST() == 0 {
-        ;; reset these buffers
-        str lineBuffer  = " " * (MaxLength + 1)
-        ; read line
-        ubyte length
-        length, void = diskio.f_readline(lineBuffer)
-
-        ; normalize line ending + whitespace
-        strings.rstrip(lineBuffer)
-
-        ; sanitize to match Insert/Replace printable ISO policy
-        ubyte i
-        for i in 0 to MaxLength-1 {
-          ubyte ch = lineBuffer[i]
-          if ch == 0 {
-            break
-          }
-          if ch < 32 or ch > 126 {
-            lineBuffer[i] = $20
-          }
-        }
-
-        ; enforce max length AFTER sanitizing
-        if length > MaxLength {
-          str tmp = " " * (MaxLength + 1)
-          strings.slice(lineBuffer, 0, MaxLength, tmp)
-          void strings.copy(tmp, lineBuffer)
-        }
-
-        uword lineAddr = allocLine(lineBuffer)
-        ; out of memory == $0000, stop reading.
-        if lineAddr == $0000 {
-            warn("File too big!")
-            break
-        }
-        idx = main.lineCount as ubyte
-        view.INDEX[idx] = lineAddr
-        main.lineCount++
-      }
-      diskio.f_close()
-      txt.clear_screen()
-      void strings.copy(filepath,doc.filepath)
-    }
-    else {
-      diskio.f_close()
+    if not doctext.load(filepath) {
       warn("Can't open file!")
       return false
     }
+    flags.UNSAVED = false
+    if doctext.truncated {
+      warn("File too big!")
+    }
+    txt.clear_screen()
+    void strings.copy(filepath,doc.filepath)
     return true
   }
 
@@ -595,58 +424,24 @@ main {
        diskio.delete(oldback)
      }
      diskio.rename(doc.filepath, oldback)
-     save_as(doc.filepath)
-     diskio.delete(oldback)
+     if save_as(doc.filepath) {
+       diskio.delete(oldback)
+     }
   }
 
-  ; Safe save: never dereference line when it becomes 0
-  sub save_as(str filepath) {
+  sub save_as(str filepath) -> bool {
     info_noblock("saving ...")
 
-    ubyte i
-    ubyte ub
-    const ubyte maxLen = main.MaxLength
-
-    void diskio.f_open_w_seek(filepath)
-
-    if main.lineCount == 0 {
-      diskio.f_close_w()
+    bool ok = doctext.save(filepath)
+    if ok {
       flags.UNSAVED = false
-      info_noblock("          ")
-      return
+    }
+    else {
+      warn("Write failed!")
     }
 
-    str writeBuffer = " " * maxLen
-    ^^Line line = view.INDEX[0]
-
-    while line != 0 {
-      ; prepare this line
-      void strings.copy(line.text, writeBuffer)
-      strings.rstrip(writeBuffer)
-
-      ; write only printable ISO bytes from the fixed-width line buffer
-      for i in 0 to maxLen-1 {
-        ub = writeBuffer[i]
-        if ub == 0 {        ; stop at terminator
-          break
-        }
-        if ub >= 32 and ub <= 126 {
-          void diskio.f_write(&ub, 1)
-        }
-      }
-
-      ; newline (LF)
-      ub = $0a
-      void diskio.f_write(&ub, 1)
-
-      ; advance
-      line = line.next
-    }
-
-    diskio.f_close_w()
-
-    flags.UNSAVED     = false
     info_noblock("          ")
+    return ok
   }
 
   sub navchar_start() {
@@ -662,18 +457,19 @@ main {
   ubyte last_char
   ubyte col
   ubyte row
-  ubyte numbers
+  uword numbers
 
   sub start () {
     txt.iso()
     doc.tabNum               = 0 ; for future proofing
     doc.charset              = 0 ; for future proofing
     doc.startBank            = 1 ; for future proofing
-    doc.firstLine            = Buffer
     doc.filepath             = " " * 80
     @(doc.filepath+80)       = 0
 
-    main.lineCount            = 0
+    scratch.text             = &scratch.data00
+    @(scratch.text+MaxLength) = 0
+    doctext.init(sys.progend(), TextTop)
     main.MODE = mode.INIT
 
     sys.wait(20)
@@ -1157,47 +953,32 @@ main {
     return curr_line
   }
 
+  ; fills the working copy with the line at screen row r and returns it.
+  ; there is only one copy: a change to it needs commit_line() before the
+  ; next line is looked at.
   sub get_Line_addr(ubyte r) -> uword {
-    uword curr_line = main.get_line_num(r) ; 1-based
-    ubyte idxw = (curr_line as ubyte) - 1  ; 0-based
-    return view.INDEX[idxw]                ; only OK if you guarantee idxw <= 255
+    doctext.fetch(main.get_line_num(r), scratch.text)
+    return scratch
+  }
+
+  sub commit_line(ubyte r) {
+    if not doctext.commit(main.get_line_num(r), scratch.text) {
+      warn("Out of memory!")
+    }
   }
 
   sub paste_line_above() {
-    if view.CLIPBOARD == 0 {
+    if not doctext.has_yank() {
       warn("Clipboard is empty ..")
       return
     }
 
     ubyte r = view.r()
-    uword curr_line = main.get_line_num(r)
 
-    ^^Line curr_addr = get_Line_addr(r)
-    ^^Line old_prev  = 0
-    ^^Line copy_addr = view.CLIPBOARD
-    ^^Line new_prev  = main.allocNewLine(copy_addr.text)
-    if new_prev == $0000 {
-        warn("Out of memory!")
-        return
+    if not doctext.put(main.get_line_num(r)) {
+      warn("Out of memory!")
+      return
     }
-
-    if curr_line > 1 {
-      old_prev = view.INDEX[(curr_line as ubyte) - 2]
-    }
-
-    new_prev.prev = old_prev
-    new_prev.next = curr_addr
-
-    curr_addr.prev = new_prev
-
-    if old_prev != 0 {
-      old_prev.next = new_prev
-    }
-
-    main.lineCount = view.insert_line_before(new_prev, curr_line, main.lineCount)
-
-    void debug.assert(view.INDEX[curr_line as ubyte - 1], new_prev, debug.EQ, "INDEX[curr_line as ubyte - 1] == new_prev")
-    void debug.assert(view.INDEX[curr_line as ubyte], curr_addr, debug.EQ, "INDEX[curr_line as ubyte] == curr_addr")
 
     flags.UNSAVED = true
 
@@ -1221,33 +1002,17 @@ main {
   }
 
   sub paste_line_below() {
-    if view.CLIPBOARD == 0 { ; indicates empty clipboard (nothing copied yet)
+    if not doctext.has_yank() { ; indicates empty clipboard (nothing copied yet)
       warn("Clipboard is empty ..")
       return
     }
 
     ubyte r = view.r()
 
-    uword curr_line = main.get_line_num(r) ; next_line is +1
-
-    ^^Line curr_addr = get_Line_addr(r)        ; gets memory addr of current Line
-    ^^Line copy_addr = view.CLIPBOARD
-    ^^Line new_next  = main.allocNewLine(copy_addr.text) ; new line with text from copied address
-    if new_next == $0000 {
-        warn("Out of memory!")
-        return
+    if not doctext.put(main.get_line_num(r) + 1) {
+      warn("Out of memory!")
+      return
     }
-
-    new_next.prev  = curr_addr
-    new_next.next  = curr_addr.next
-    curr_addr.next = new_next
-
-    ;; call to update INDEX
-    main.lineCount = view.insert_line_after(new_next, main.get_line_num(r), main.lineCount)
-
-    ; need to assert new address got inserted into view.INDEX
-    void debug.assert(view.INDEX[curr_line as ubyte - 1], curr_addr, debug.EQ, "INDEX[curr_line as ubyte - 1] == curr_addr")
-    void debug.assert(view.INDEX[curr_line as ubyte], new_next, debug.EQ, "INDEX[curr_line as ubyte] == new_next")
 
     ;info("p ...")
     flags.UNSAVED = true
@@ -1275,30 +1040,10 @@ main {
   sub insert_line_above() {
     ubyte r = view.r()
 
-    uword curr_line = main.get_line_num(r)
-
-    ^^Line curr_addr = get_Line_addr(r)
-    ^^Line old_prev  = 0
-    ^^Line new_prev  = main.allocNewLine("  ")
-    if new_prev == $0000 {
-        warn("Out of memory!")
-        return
+    if not doctext.insert_empty(main.get_line_num(r)) {
+      warn("Out of memory!")
+      return
     }
-
-    if curr_line > 1 {
-      old_prev = view.INDEX[(curr_line as ubyte) - 2]
-    }
-
-    new_prev.prev = old_prev
-    new_prev.next = curr_addr
-
-    curr_addr.prev = new_prev
-
-    if old_prev != 0 {
-      old_prev.next = new_prev
-    }
-
-    main.lineCount = view.insert_line_before(new_prev, curr_line, main.lineCount)
 
     flags.UNSAVED = true
 
@@ -1333,23 +1078,10 @@ main {
 
     uword curr_line = main.get_line_num(r) ; next_line is +1
 
-    ^^Line curr_addr = get_Line_addr(r)        ; gets memory addr of current Line
-    ^^Line new_next  = main.allocNewLine("  ") ; creates new Line instance to insert
-    if new_next == $0000 {
-        warn("Out of memory!")
-        return
+    if not doctext.insert_empty(curr_line + 1) {
+      warn("Out of memory!")
+      return
     }
-
-    new_next.prev  = curr_addr
-    new_next.next  = curr_addr.next
-    curr_addr.next = new_next
-
-    ;; call to update INDEX
-    main.lineCount = view.insert_line_after(new_next, main.get_line_num(r), main.lineCount)
-
-    ; need to assert new address got inserted into view.INDEX
-    void debug.assert(view.INDEX[curr_line as ubyte - 1], curr_addr, debug.EQ, "INDEX[curr_line as ubyte - 1] == curr_addr")
-    void debug.assert(view.INDEX[curr_line as ubyte], new_next, debug.EQ, "INDEX[curr_line as ubyte] == new_next")
 
     ;info("o ...")
     flags.UNSAVED = true
@@ -1393,9 +1125,9 @@ main {
     ubyte c = view.c()
     ubyte r = view.r()
 
-    ^^Line curr_addr = get_Line_addr(r) ; line being deleted
-
-    view.CLIPBOARD = curr_addr
+    if not doctext.yank(main.get_line_num(r)) {
+      warn("Line too long to yank!")
+    }
 
     cursor.replace(c, r)
     main.update_tracker()
@@ -1411,6 +1143,8 @@ main {
     for i in (c-view.LEFT_MARGIN) to main.MaxLength-1 {
       @(curr_addr.text + i) = $20
     }
+    commit_line(r)
+    flags.UNSAVED = true
 
     void redraw_line(curr_addr, r)
 
@@ -1431,14 +1165,9 @@ main {
 
     ; safety/vim-like: if only one line, clear it instead of deleting it
     if main.lineCount == 1 {
+      void doctext.yank(1)
+      doctext.delete(1)
       ^^Line only_addr = get_Line_addr(r)
-      view.CLIPBOARD = only_addr
-
-      ubyte i
-      for i in 0 to MaxLength-1 {
-        @(only_addr.text + i) = $20
-      }
-      @(only_addr.text + MaxLength) = 0
 
       void redraw_line(only_addr, r)
 
@@ -1452,26 +1181,15 @@ main {
 
     info("cut")
 
-    ^^Line curr_addr = get_Line_addr(r) ; line being deleted
-    ^^Line prev_addr = curr_addr.prev   ; line before line being deleted
-    ^^Line next_addr = curr_addr.next   ; line after line being deleted
-
-    ; short circuit curr_line out of links
-    if prev_addr != 0 {
-      prev_addr.next = next_addr
-    }
-    if next_addr != 0 {                   ; make sure curr_line is not last line of doc
-      next_addr.prev = prev_addr
-    }
-
     ; compute whether we just deleted the last document line
     uword deleted_line = main.get_line_num(r)
 
-    main.lineCount = view.delete_item(deleted_line, main.lineCount)
+    if not doctext.yank(deleted_line) {
+      warn("Line too long to yank!")
+    }
+    doctext.delete(deleted_line)
 
     draw_screen()
-
-    view.CLIPBOARD   = curr_addr ; save deleted address to clipboard for later pasting
 
     flags.UNSAVED = true
 
@@ -1515,8 +1233,6 @@ main {
 
   sub draw_screen () {               ; NOTE: assumes view.CURR_TOP_LINE is correct
       info_noblock("             ")
-      ubyte idx = (view.CURR_TOP_LINE as ubyte) - 1
-      ^^Line line = view.INDEX[idx]
       ubyte r
       txt.plot(view.LEFT_MARGIN, view.TOP_LINE)
       ubyte m,n
@@ -1529,7 +1245,7 @@ main {
         m = remaining as ubyte
         n = (view.HEIGHT - remaining) as ubyte
       }
-      uword lineNum = idx + 1
+      uword lineNum = view.CURR_TOP_LINE
       str tmp = " " *main.MaxLength
       repeat m {
         r = view.r()
@@ -1541,13 +1257,11 @@ main {
         }
         txt.plot(view.LEFT_MARGIN, r)
 
-        void strings.copy(line.text,tmp) ; also figure out why I have to do this to get rid of errant space in next line
+        doctext.fetch(lineNum, tmp)
         strings.rstrip(tmp)
         prints(tmp)
         txt.plot(view.LEFT_MARGIN, r+1)
 
-        ; get next Line
-        line = line.next
         lineNum++
       }
       repeat n {
@@ -1564,28 +1278,22 @@ main {
       if lineNum > main.lineCount {
         return
       }
-      ubyte idx = lineNum as ubyte - 1
-      uword addr = view.INDEX[idx]
-      ^^Line line = addr
-      addr = line.next
+      doctext.fetch(lineNum, scratch.text)
       txt.plot(0, view.BOTTOM_LINE)
       prints(view.BLANK_LINE79)
       txt.plot(0, view.BOTTOM_LINE)
       main.printLineNum(lineNum)
       txt.plot(view.LEFT_MARGIN, view.BOTTOM_LINE)
-      say(line.text)
+      say(scratch.text)
   }
 
   sub draw_top_line (uword lineNum) {
       if lineNum < 1 {
         return
       }
-      ubyte idx = lineNum as ubyte - 1
-      uword addr = view.INDEX[idx]
-      ^^Line line = addr
-      addr = line.next
+      doctext.fetch(lineNum, scratch.text)
       txt.plot(view.LEFT_MARGIN, view.TOP_LINE)
-      prints(line.text)
+      prints(scratch.text)
       txt.plot(0, view.TOP_LINE)
       main.printLineNum(lineNum)
   }
@@ -1858,6 +1566,7 @@ main {
       @(curr_addr.text + i) = txt.getchr(view.LEFT_MARGIN + i, r)
     }
     @(curr_addr.text + MaxLength) = 0      ; null terminate
+    commit_line(r)
 
     cursor.replace(c,r)
     txt.plot(c,r)
@@ -1890,6 +1599,8 @@ main {
     ; replace char at (c,r)
     @(curr_addr.text + (c - view.LEFT_MARGIN)) = tchar
     @(curr_addr.text + MaxLength) = 0       ; null terminate
+    commit_line(r)
+    flags.UNSAVED = true
     cursor.saved_char = tchar
 
     ; redraw line
@@ -1926,6 +1637,7 @@ main {
 
     @(curr_addr.text + (c - view.LEFT_MARGIN)) = tchar
     @(curr_addr.text + MaxLength) = 0       ; null terminate
+    commit_line(r)
     flags.UNSAVED = true
 
     cursor.saved_char = tchar
@@ -1968,6 +1680,7 @@ main {
     }
     @(curr_addr.text + (MaxLength - 1)) = $20
     @(curr_addr.text + MaxLength) = 0     ; null terminate
+    commit_line(r)
 
     ; redraw + get visible length from redraw_line()
     ubyte length = redraw_line(curr_addr, r)
