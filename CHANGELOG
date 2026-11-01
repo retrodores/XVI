@@ -1,3 +1,11 @@
+2026-11-01 - Automated TAP regression tests
+
+- Add P8 buffer and document suites under t/, consumed by Perl prove.
+- Execute shared cases in Prog8 VM and headless x16emu r49.
+- Use unchanged production modules; test adapters stay under t/.
+- Add CI test jobs and require them before draft release creation.
+- Document agent-owned behavioral regression test maintenance in t/AGENTS.md.
+
 2026-11-01 - Draft release builds
 
 - Create draft prereleases from draft-* tags after both CI builds pass.

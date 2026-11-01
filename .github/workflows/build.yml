@@ -52,7 +52,7 @@ jobs:
   draft-release:
     name: Create draft release
     if: startsWith(github.ref, 'refs/tags/draft-')
-    needs: build
+    needs: [build, test]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -82,3 +82,47 @@ jobs:
           Both targets compile and assemble; emulator/runtime testing is pending.
           NOTES
           gh release create "$RELEASE_TAG" release/* --verify-tag --draft --prerelease --title "XVI2 development build ($RELEASE_TAG)" --notes-file notes.md
+
+  test:
+    name: TAP tests (${{ matrix.backend }})
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [virtual, cx16]
+    runs-on: ubuntu-24.04
+    env:
+      PROG8_VERSION: 14.0-BETA3
+      BACKEND: ${{ matrix.backend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y perl python3 64tass unzip libsdl2-2.0-0
+      - name: Download and verify Prog8
+        run: |
+          mkdir -p build/tools
+          curl -fL --retry 3 "https://github.com/irmen/prog8/releases/download/v${PROG8_VERSION}/prog8c-${PROG8_VERSION}-all.jar" -o "build/tools/prog8c-${PROG8_VERSION}-all.jar"
+          echo "7117cabdb1d3ecf11d4f38aa7e2cea570056a3eb2c3b3f4e8593838b1b4115c0  build/tools/prog8c-${PROG8_VERSION}-all.jar" | sha256sum -c -
+      - name: Download and verify headless X16 emulator
+        if: matrix.backend == 'cx16'
+        run: |
+          curl -fL --retry 3 https://github.com/X16Community/x16-emulator/releases/download/r49/x16emu_linux-x86_64-r49.zip -o build/tools/x16emu-r49.zip
+          echo 'efb2d4ad36ae4244370004891aa67bdf85d2ec01b42b7f12f97b48b62aff009d  build/tools/x16emu-r49.zip' | sha256sum -c -
+          unzip -q build/tools/x16emu-r49.zip -d build/tools/x16emu
+          chmod +x build/tools/x16emu/x16emu
+      - name: Execute P8 TAP tests with prove
+        run: |
+          export JAR="$PWD/build/tools/prog8c-${PROG8_VERSION}-all.jar"
+          if [ "$BACKEND" = cx16 ]; then
+            export X16EMU="$PWD/build/tools/x16emu/x16emu"
+            export X16ROM="$PWD/build/tools/x16emu/rom.bin"
+            test -x "$X16EMU" && test -s "$X16ROM"
+            prove -v t/03-*.t t/04-*.t
+          else
+            prove -v t/01-*.t t/02-*.t
+          fi

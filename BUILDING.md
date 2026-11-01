@@ -51,7 +51,8 @@ From the directory containing your installed x16emu and its matching ROM:
 Press `i` to begin inserting text; Escape returns to navigation mode.
 See [readme.txt](readme.txt) for commands and
 [regression-test.md](regression-test.md) for manual testing.
-The CI job only compiles and assembles; emulator testing is separate.
+CI also executes focused buffer/document tests headlessly; interactive editor
+regression testing is still separate.
 
 ## CI
 
@@ -74,7 +75,34 @@ make build TARGET=c64 JAR="$PWD/build/tools/prog8c-14.0-BETA3-all.jar"
 ```
 
 CI builds both targets independently. The C64 artifact is named
-`xvi2-c64-prog8-14.0-BETA3`. Neither target is runtime-tested by CI.
+`xvi2-c64-prog8-14.0-BETA3`. The shared test programs also execute under headless X16 emulation;
+C64 execution and full editor UI behavior are not covered.
 Both targets currently write `xvi2.prg`; copy the output aside before
 building another target. Add target-specific instructions and CI coverage
 here as more platforms are validated.
+
+## Automated tests (TAP / prove)
+
+From the repository root:
+
+```sh
+JAR=/absolute/path/prog8c-14.0-BETA3-all.jar prove -v t/*.t
+```
+
+The two VM wrappers run without an emulator. To also execute the same suites
+as real 65C02 programs, set `X16EMU` to the absolute x16emu r49 executable
+and `X16ROM` to its matching ROM. Install the SDL2 runtime and Python 3 as well
+as Java, Perl/prove and 64tass. X16 wrappers skip locally if these variables
+are unset; both backends are explicitly required in CI.
+
+The test programs import the existing production modules without editing them.
+The VM uses the buffer's portable scan branches; headless X16 tests use the
+production platform and assembly helpers through x16emu's `-testbench` mode.
+Assertions execute in P8 and emit TAP, which Perl's `prove` evaluates. Compilation,
+VM/emulator failures, missing plans and timeouts fail the run.
+
+Coverage includes gap movement and capacity boundaries, page-boundary scans,
+marks, undo/redo, document line operations, yank/paste, horizontal windows, and
+line-ending normalization. It does not yet cover editor UI, disk load/save,
+C64 execution, or a measured percentage of source lines. See `t/AGENTS.md` for
+maintenance guidance. Draft release jobs now wait for both test backends too.
