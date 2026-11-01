@@ -1,3 +1,9 @@
+2026-11-01 - C64 continuous build
+
+- Verify the C64 build with Prog8 14.0-BETA3 and -noopt.
+- Build cx16 and c64 independently in Linux CI, with separate PRG artifacts.
+- Update build documentation; emulator/runtime checks remain manual.
+
 2026-11-01 - Build setup and repository cleanup
 
 - Document the Commander X16 Linux build with Prog8 14.0-BETA3.

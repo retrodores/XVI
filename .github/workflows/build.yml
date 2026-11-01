@@ -9,10 +9,16 @@ permissions:
   contents: read
 
 jobs:
-  cx16:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [cx16, c64]
     runs-on: ubuntu-24.04
     env:
       PROG8_VERSION: 14.0-BETA3
+      TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -28,15 +34,15 @@ jobs:
           mkdir -p build/tools
           curl -fL --retry 3 "https://github.com/irmen/prog8/releases/download/v${PROG8_VERSION}/prog8c-${PROG8_VERSION}-all.jar" -o "build/tools/prog8c-${PROG8_VERSION}-all.jar"
           echo "7117cabdb1d3ecf11d4f38aa7e2cea570056a3eb2c3b3f4e8593838b1b4115c0  build/tools/prog8c-${PROG8_VERSION}-all.jar" | sha256sum -c -
-      - name: Build Commander X16 program
-        run: make build TARGET=cx16 OPT=-noopt JAR="$PWD/build/tools/prog8c-${PROG8_VERSION}-all.jar"
+      - name: Build program
+        run: make build TARGET="$TARGET" OPT=-noopt JAR="$PWD/build/tools/prog8c-${PROG8_VERSION}-all.jar"
       - name: Package PRG
         run: |
           test -s xvi2.prg
-          mkdir -p build/cx16
-          cp xvi2.prg build/cx16/XVI2.PRG
+          mkdir -p build/${{ matrix.target }}
+          cp xvi2.prg build/${{ matrix.target }}/XVI2.PRG
       - uses: actions/upload-artifact@v4
         with:
-          name: xvi2-cx16-prog8-14.0-BETA3
-          path: build/cx16/XVI2.PRG
+          name: xvi2-${{ matrix.target }}-prog8-14.0-BETA3
+          path: build/${{ matrix.target }}/XVI2.PRG
           if-no-files-found: error

@@ -40,7 +40,7 @@ To experiment with optimization explicitly, use `make build OPT=`.
 
 ### Run on Windows with x16emu
 
-Download the workflow's `xvi2-cx16-prog8-14.0-BETA3` artifact and extract
+Download the workflow's `xvi2-cx16-prog8-14.0-BETA3` artifact for the X16 target and extract
 `XVI2.PRG`, or copy your locally built `xvi2.prg` to Windows.
 From the directory containing your installed x16emu and its matching ROM:
 
@@ -56,8 +56,9 @@ The CI job only compiles and assembles; emulator testing is separate.
 ## CI
 
 [build.yml](.github/workflows/build.yml) uses Ubuntu 24.04, Java 21,
-64tass, and the checksum-verified BETA3 release JAR. It invokes the same
-`make build` target shown above and packages the result as `XVI2.PRG`.
+64tass, and the checksum-verified BETA3 release JAR. Its matrix invokes the same
+`make build` target for `cx16` and `c64`, packaging each result as `XVI2.PRG`
+in a separate target-named artifact.
 It runs on pushes, pull requests, and manual dispatch.
 
 ## Other platforms
@@ -66,13 +67,14 @@ Platform-specific modules live in `src/<target>/`; shared editor and
 buffer code lives directly under `src/`. The Makefile selects modules
 using `TARGET`.
 
-A C64 port is present in `src/c64/`. Its build can be attempted with:
+A C64 port is present in `src/c64/`. Its Linux build has also been verified with:
 
 ```sh
 make build TARGET=c64 JAR="$PWD/build/tools/prog8c-14.0-BETA3-all.jar"
 ```
 
-The C64 build and runtime are not verified by the X16 CI job.
+CI builds both targets independently. The C64 artifact is named
+`xvi2-c64-prog8-14.0-BETA3`. Neither target is runtime-tested by CI.
 Both targets currently write `xvi2.prg`; copy the output aside before
 building another target. Add target-specific instructions and CI coverage
 here as more platforms are validated.

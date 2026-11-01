@@ -13,8 +13,8 @@ See [BUILDING.md](BUILDING.md) for the tested Linux build and Windows
 x16emu instructions. The current X16 build uses **Prog8 14.0-BETA3**
 with optimization disabled.
 
-The **Build** GitHub Actions workflow compiles the X16 version on Linux
-and uploads `XVI2.PRG` as a downloadable artifact. Compilation is checked;
+The **Build** GitHub Actions workflow compiles the X16 and C64 versions on Linux
+and uploads a separate `XVI2.PRG` artifact for each target. Compilation is checked;
 the workflow does not run an emulator.
 
 ## Help and testing
