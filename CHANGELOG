@@ -1,3 +1,8 @@
+2026-11-01 - Draft release builds
+
+- Create draft prereleases from draft-* tags after both CI builds pass.
+- Attach separately named X16 and C64 PRGs and SHA-256 checksums.
+
 2026-11-01 - C64 continuous build
 
 - Verify the C64 build with Prog8 14.0-BETA3 and -noopt.
