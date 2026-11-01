@@ -77,3 +77,7 @@ structs.prg
 util.sym
 x16emu.exe
 zlib1.dll
+
+# Local compiler and current build output
+prog8c-*-all.jar
+xvi2.prg

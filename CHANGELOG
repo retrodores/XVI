@@ -1,3 +1,14 @@
+2026-11-01 - Build setup and repository cleanup
+
+- Document the Commander X16 Linux build with Prog8 14.0-BETA3.
+- Use -noopt for the BETA3 unsigned-subtraction build issue.
+- Add platform module search paths and make the default target build only.
+- Add Linux CI that builds the X16 PRG and uploads it as an artifact.
+- Move historical binaries, the empty 1.2.0 ZIP, the root sample editing
+  session, and the unused debug helper into attic.
+- Remove obsolete preprocessing and XVI 1.x packaging recipes.
+- Emulator/runtime testing remains separate from compilation.
+
 This is just a dump of the things I've knocked out during this initial
 code phase to create a working strawman:
 
