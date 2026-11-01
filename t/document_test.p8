@@ -42,24 +42,24 @@ main {
         doctext.clear()
         tap.ok(doctext.has_yank() and doctext.put(1), "yank survives new document")
         reset()
-        sys.memset(window,76,'x')
-        window[76] = 0
-        tap.ok(doctext.commit(1,window) and doctext.length(1) == 76, "commit full visible window")
-        doctext.first_col = 76
+        sys.memset(window,doctext.WIDTH,'x')
+        window[doctext.WIDTH] = 0
+        tap.ok(doctext.commit(1,window) and doctext.length(1) == doctext.WIDTH, "commit full visible window")
+        doctext.first_col = doctext.WIDTH
         void doctext.insert_at(1,0,'Y')
-        tap.ok(doctext.length(1) == 77 and buffer.get(76) == 'Y', "insert beyond original visible width")
+        tap.ok(doctext.length(1) == doctext.WIDTH+1 and buffer.get(doctext.WIDTH) == 'Y', "insert beyond original visible width")
         doctext.first_col = 0
         doctext.fetch(1,window)
         window[0] = 'Q'
-        tap.ok(doctext.commit(1,window) and buffer.get(76) == 'Y' and doctext.length(1) == 77, "commit preserves text beyond visible window")
-        doctext.first_col = 70
+        tap.ok(doctext.commit(1,window) and buffer.get(doctext.WIDTH) == 'Y' and doctext.length(1) == doctext.WIDTH+1, "commit preserves text beyond visible window")
+        doctext.first_col = doctext.WIDTH-6
         doctext.fetch(1,window)
-        tap.ok(window[6] == 'Y' and window[7] == ' ' and window[76] == 0, "panned fetch pads and terminates window")
+        tap.ok(window[6] == 'Y' and window[7] == ' ' and window[doctext.WIDTH] == 0, "panned fetch pads and terminates window")
         doctext.delete_at(1,6)
-        tap.ok(doctext.length(1) == 76, "panned delete uses absolute column")
+        tap.ok(doctext.length(1) == doctext.WIDTH, "panned delete uses absolute column")
         reset()
         doctext.fetch(1,window)
-        tap.ok(window[0] == ' ' and window[75] == ' ' and window[76] == 0, "empty fetch returns padded window")
+        tap.ok(window[0] == ' ' and window[doctext.WIDTH-1] == ' ' and window[doctext.WIDTH] == 0, "empty fetch returns padded window")
         sys.memcopy("a\r\x0ab\rc\x0ad",raw,8)
         doctext.after_cr = false
         n = doctext.clean(raw,8)

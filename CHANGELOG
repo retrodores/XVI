@@ -1,3 +1,12 @@
+2026-11-01 - Headless C64 TAP tests
+
+- Execute the shared buffer/document suites as C64 binaries in VICE console mode.
+- Add a test-only TAP file adapter and debug-cartridge completion signal.
+- Fetch revision- and checksum-pinned C64 ROMs from VICE upstream.
+- Parameterize document expectations for the real 40-column C64 geometry.
+- Require all three execution backends in CI before creating draft releases.
+- Leave production sources unchanged.
+
 2026-11-01 - Automated TAP regression tests
 
 - Add P8 buffer and document suites under t/, consumed by Perl prove.

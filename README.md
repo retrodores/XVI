@@ -16,7 +16,7 @@ with optimization disabled.
 The **Build** GitHub Actions workflow compiles the X16 and C64 versions on Linux
 and uploads a separate `XVI2.PRG` artifact for each target. Compilation is checked;
 separate TAP test jobs run the buffer and document suites in Prog8 VM and
-headless x16emu. Full editor UI testing remains manual.
+headless x16emu, and headless VICE for C64. Full editor UI testing remains manual.
 
 ## Help and testing
 

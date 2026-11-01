@@ -57,8 +57,8 @@ sub run_suite {
     my $java = $ENV{JAVA} // 'java';
     my $dir = tempdir('xvi2-test-XXXXXX', TMPDIR => 1, CLEANUP => 1);
     my @compiler = ($java, '-jar', $jar);
-    my @paths = $target eq 'cx16'
-        ? ('-srcdirs', 'src/cx16', '-srcdirs', 't/support/cx16')
+    my @paths = $target ne 'virtual'
+        ? ('-srcdirs', "src/$target", '-srcdirs', "t/support/$target")
         : ('-srcdirs', 't/support');
     my ($status, $output) = capture("$dir/compile.log", @compiler,
         '-noopt', '-target', $target, '-srcdirs', 'src',
@@ -66,14 +66,17 @@ sub run_suite {
     bail('Prog8 test compilation failed or timed out', $output) if $status;
     (my $name = $source) =~ s{.*/}{};
     $name =~ s/\.p8$//;
-    $name .= $target eq 'cx16' ? '.prg' : '.p8ir';
+    $name .= $target ne 'virtual' ? '.prg' : '.p8ir';
     my $ir = File::Spec->catfile($dir, $name);
     bail('compiler did not produce test output', $output) unless -s $ir;
     my @run = $target eq 'cx16'
-        ? ('python3', 't/run_x16.py', $ir) : (@compiler, '-vm', $ir);
+        ? ('python3', 't/run_x16.py', $ir)
+        : $target eq 'c64' ? ('python3', 't/run_vice.py', $ir)
+        : (@compiler, '-vm', $ir);
     ($status, $output) = capture("$dir/run.log", @run);
     my $complete = $target eq 'cx16'
         ? $output =~ /^# X16 test program completed$/m
+        : $target eq 'c64' ? $output =~ /^# C64 test program completed$/m
         : $output =~ /^Program exit! Statuscode=0\b/m;
     bail('test execution failed or timed out', $output) if $status || !$complete;
     # Keep TAP from the P8 program verbatim; make compiler/VM chatter diagnostic.

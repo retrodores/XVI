@@ -76,7 +76,8 @@ make build TARGET=c64 JAR="$PWD/build/tools/prog8c-14.0-BETA3-all.jar"
 
 CI builds both targets independently. The C64 artifact is named
 `xvi2-c64-prog8-14.0-BETA3`. The shared test programs also execute under headless X16 emulation;
-C64 execution and full editor UI behavior are not covered.
+C64 buffer/document tests also execute under headless VICE;
+full editor UI behavior is not covered.
 Both targets currently write `xvi2.prg`; copy the output aside before
 building another target. Add target-specific instructions and CI coverage
 here as more platforms are validated.
@@ -93,7 +94,7 @@ The two VM wrappers run without an emulator. To also execute the same suites
 as real 65C02 programs, set `X16EMU` to the absolute x16emu r49 executable
 and `X16ROM` to its matching ROM. Install the SDL2 runtime and Python 3 as well
 as Java, Perl/prove and 64tass. X16 wrappers skip locally if these variables
-are unset; both backends are explicitly required in CI.
+are unset; all three backends are explicitly required in CI.
 
 The test programs import the existing production modules without editing them.
 The VM uses the buffer's portable scan branches; headless X16 tests use the
@@ -104,5 +105,28 @@ VM/emulator failures, missing plans and timeouts fail the run.
 Coverage includes gap movement and capacity boundaries, page-boundary scans,
 marks, undo/redo, document line operations, yank/paste, horizontal windows, and
 line-ending normalization. It does not yet cover editor UI, disk load/save,
-C64 execution, or a measured percentage of source lines. See `t/AGENTS.md` for
-maintenance guidance. Draft release jobs now wait for both test backends too.
+or a measured percentage of source lines. See `t/AGENTS.md` for
+maintenance guidance. Draft release jobs now wait for all three test backends too.
+
+### C64 execution in headless VICE
+
+Ubuntu 24.04's VICE 3.7.1 is the tested emulator. Its `-console` mode needs no
+window server. Install `vice` (from Ubuntu multiverse), then run:
+
+```sh
+python3 t/fetch_vice_roms.py build/tools/vice-roms
+export VICE="$(command -v x64sc)"
+export VICE_ROMS="$PWD/build/tools/vice-roms"
+JAR=/absolute/path/prog8c-14.0-BETA3-all.jar prove -v t/05-*.t t/06-*.t
+```
+
+The helper downloads the three required ROMs from a fixed revision of VICE's
+source mirror and checks their SHA-256 digests. They stay in ignored `build/`.
+The tests compile the unchanged production C64 modules with BETA3 and `-noopt`.
+The test-only TAP adapter writes ASCII results into a fresh temporary filesystem,
+closes the file, and signals completion using VICE's debug cartridge at `$d7ff`.
+The runner requires that completion signal and a TAP plan; cycle and wall-clock
+limits prevent hangs from passing. `prove` evaluates the actual C64 assertions.
+
+Set both emulator variable pairs to execute all six wrappers / three backends
+with `prove -v t/*.t`. CI requires every backend before a draft release is made.

@@ -79,7 +79,7 @@ jobs:
 
           Assets: XVI2-X16.PRG and XVI2-C64.PRG, plus SHA-256 checksums.
           Built on Linux with Prog8 14.0-BETA3 and 64tass, using -noopt.
-          Both targets compile and assemble; emulator/runtime testing is pending.
+          Both targets compile and assemble. Buffer and document suites pass in Prog8 VM, headless x16emu, and headless VICE. Interactive editor testing remains manual.
           NOTES
           gh release create "$RELEASE_TAG" release/* --verify-tag --draft --prerelease --title "XVI2 development build ($RELEASE_TAG)" --notes-file notes.md
 
@@ -88,7 +88,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        backend: [virtual, cx16]
+        backend: [virtual, cx16, c64]
     runs-on: ubuntu-24.04
     env:
       PROG8_VERSION: 14.0-BETA3
@@ -115,6 +115,11 @@ jobs:
           echo 'efb2d4ad36ae4244370004891aa67bdf85d2ec01b42b7f12f97b48b62aff009d  build/tools/x16emu-r49.zip' | sha256sum -c -
           unzip -q build/tools/x16emu-r49.zip -d build/tools/x16emu
           chmod +x build/tools/x16emu/x16emu
+      - name: Install VICE and verified C64 ROMs
+        if: matrix.backend == 'c64'
+        run: |
+          sudo apt-get install -y vice
+          python3 t/fetch_vice_roms.py build/tools/vice-roms
       - name: Execute P8 TAP tests with prove
         run: |
           export JAR="$PWD/build/tools/prog8c-${PROG8_VERSION}-all.jar"
@@ -123,6 +128,11 @@ jobs:
             export X16ROM="$PWD/build/tools/x16emu/rom.bin"
             test -x "$X16EMU" && test -s "$X16ROM"
             prove -v t/03-*.t t/04-*.t
+          elif [ "$BACKEND" = c64 ]; then
+            export VICE="$(command -v x64sc)"
+            export VICE_ROMS="$PWD/build/tools/vice-roms"
+            test -x "$VICE" && test -s "$VICE_ROMS/kernal-901227-03.bin"
+            prove -v t/05-*.t t/06-*.t
           else
             prove -v t/01-*.t t/02-*.t
           fi
