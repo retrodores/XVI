@@ -1,12 +1,6 @@
 ;
 ; vim:set softtabstop=2 shiftwidth=2 expandtab:
 ;
-; BUGS:
-; - dd bug
-; -- 1. open a file, immediately jump to the botton
-; -- 2. add a few lines at the bottom with 'o', typing some
-; -- 3. hit <esc>, then do "dd"
-
 ; TODO:
 ; - add 'dG' for (gillham)
 ; - isolate remaining cursor issues
@@ -21,12 +15,10 @@
 
 ; FUTURE TODO:
 ; - ":/" (requested by Sam)
-; - allow many more lines (convert Line to use str instead permanent line)
 ; - do not write contiguous spaces (fully blank line, trim when writing)
 ; -- this might be an optimization that is needed when we increase line
 ; -- support > 140
 ; - stack based "undo" (p/P, o/O, dd)
-; - fast "save_line_buffer"
 
 ; DONE:
 ; - added <ESC> as cancel when in command mode
@@ -38,7 +30,6 @@
 ; See CHANGELOG for the rest
 
 %zeropage basicsafe
-%option no_sysinit
 %encoding iso
 
 %import textio
@@ -46,7 +37,8 @@
 %import conv
 %import syslib
 %import diskio
-%import debug
+%import xvi_platform
+%import xvitext
 ;;; %import messages
 
 mode {
@@ -65,18 +57,15 @@ flags {
 }
 
 view {
-  const ubyte LEFT_MARGIN     = 4
-  const ubyte RIGHT_MARGIN    = 79
-  const ubyte HEIGHT          = 56 ; absolute height of the edit/view area
-  const ubyte TOP_LINE        = 2  ; row+1 of the first line of the document (FIRST_LINE_IDX)
-  const ubyte MIDDLE_LINE     = 27
-  const ubyte BOTTOM_LINE     = 57 ; row+1 of the last line of the view port (LAST_LINE_IDX)
-  const ubyte FOOTER_LINE     = 59
-  str         BLANK_LINE79    = " " * 79
-  str         BLANK_LINE76    = " " * 76
+  const ubyte LEFT_MARGIN     = plat.LEFT_MARGIN
+  const ubyte RIGHT_MARGIN    = plat.RIGHT_MARGIN
+  const ubyte HEIGHT          = plat.HEIGHT      ; absolute height of the edit/view area
+  const ubyte TOP_LINE        = plat.TOP_LINE    ; row of the first line of the document (FIRST_LINE_IDX)
+  const ubyte BOTTOM_LINE     = plat.BOTTOM_LINE ; row of the last line of the view port (LAST_LINE_IDX)
+  const ubyte FOOTER_LINE     = plat.FOOTER_LINE
+  str         BLANK_ROW       = " " * plat.ROW_LEN    ; a whole row, from column 0
+  str         BLANK_TEXT      = " " * plat.TEXT_WIDTH ; the text part of a row
   uword       CURR_TOP_LINE   = 1  ; tracks which actual doc line is at TOP_LINE
-  uword[main.MaxLines] INDEX       ; Line to address look up
-  uword       CLIPBOARD       = 0  ; holds the address of the current line we can "paste"
 
   sub r() -> ubyte {
     return txt.get_row()
@@ -85,106 +74,6 @@ view {
   sub c() -> ubyte {
     return txt.get_column()
   }
-
-  sub insert_line_before (uword new_addr, uword curr_line, uword lineCount) -> uword {
-    uword newLineCount = lineCount + 1    ; new line count
-    uword curr_idx     = curr_line - 1    ; array index in view.INDEX to put the new line addres
-    uword last_idx     = newLineCount - 1 ; idx of the last line in the document
-
-    uword i
-    ; Note: the range decrements by 1 from last_idx to the idx right before new_idx,
-    ; which is new_idx+1, since we're decrementing; ensures old contents in new_idx
-    ; get copied into the slot 'below' it ...
-    for i in last_idx downto curr_idx+1 step -1 {
-      ubyte idx = i as ubyte
-      view.INDEX[idx] = view.INDEX[idx-1]
-    }
-
-    ; finally, insert new address into the new_idx slot
-    view.INDEX[curr_idx as ubyte] = new_addr
-
-    return newLineCount
-  }
-
-  sub insert_line_after (uword new_addr, uword curr_line, uword lineCount) -> uword {
-    uword next_line    = curr_line + 1    ; next line number
-    uword newLineCount = lineCount + 1    ; new line count
-    uword new_idx      = next_line - 1    ; array index in view.INDEX to put the new line addres
-    uword last_idx     = newLineCount - 1 ; idx of the last line in the document
-
-    uword i
-    ; Note: the range decrements by 1 from last_idx to the idx right before new_idx,
-    ; which is new_idx+1, since we're decrementing; ensures old contents in new_idx
-    ; get copied into the slot 'below' it ...
-    for i in last_idx downto new_idx+1 step -1 {
-      ubyte idx = i as ubyte
-      view.INDEX[idx] = view.INDEX[idx-1]
-    }
-
-    ; finally, insert new address into the new_idx slot
-    view.INDEX[new_idx as ubyte] = new_addr
-
-    return newLineCount
-  }
-
-  sub delete_item (uword curr_line, uword lineCount) -> uword {
-    uword newLineCount = lineCount - 1
-    uword i
-    for i in curr_line-1 to newLineCount {
-      ubyte idx = i as ubyte
-      view.INDEX[idx] = view.INDEX[idx + 1]
-    }
-    return newLineCount
-  }
-}
-
-cursor {
-  ubyte saved_char
-
-  sub save_char(ubyte c, ubyte r) {
-    saved_char = txt.getchr(c,r)
-  }
-
-  sub save_current_char(ubyte c, ubyte r) {
-    save_char(c,r)
-  }
-
-  sub restore_current_char() {
-    ubyte c = view.c()
-    ubyte r = view.r()
-    txt.plot(c,r)
-    if saved_char == $22 {
-      cbm.CHROUT($80)
-    }
-    txt.chrout(saved_char)
-    txt.plot(c,r)
-  }
-
-  sub hide() {
-    restore_current_char()
-    saved_char = $20
-  }
-
-  ; the cursor is the underlying character, with the color scheme inverted
-  sub place(ubyte new_c, ubyte new_r) {
-    restore_current_char()  ;; restore char in current cursor location
-    txt.plot(new_c,new_r)   ;; move cursor to new location
-    save_current_char(new_c, new_r)     ;; save char in the current location (here, the new c,r)
-    if saved_char == $22 {
-      cbm.CHROUT($80)
-    }
-    txt.chrout(saved_char)
-    txt.setclr(new_c,new_r,$16) ; inverses color
-    txt.plot(new_c,new_r)   ;; move cursor back after txt.chrout advances cursor
-  }
-
-  ; the cursor is the underlying character, with the color scheme inverted
-  sub replace(ubyte new_c, ubyte new_r) {
-    save_current_char(new_c, new_r)     ;; save char in the current location (here, the new c,r)
-    txt.setclr(new_c,new_r,$16) ; inverses color
-    txt.plot(new_c,new_r)   ;; move cursor back after txt.chrout advances cursor
-  }
-
 }
 
 command {
@@ -193,36 +82,43 @@ command {
 
   sub prompt () {
     ubyte cmdchar
+    ubyte cmdlen = 0
     cursor.hide()
-    void strings.copy(" " * 60, cmdBuffer)
     txt.plot(0, view.FOOTER_LINE) ; move cursor to the starting position for writing
-    main.prints(view.BLANK_LINE79)
+    main.prints(view.BLANK_ROW)
     txt.plot(0, view.FOOTER_LINE)
-    txt.print(":")
+    plat.putc(':')
   CMDINPUT:
-    void, cmdchar = cbm.GETIN()
+    cmdchar = plat.getkey()
     if cmdchar == $1b {  ; ESC key, get out of command mode
       txt.plot(0, view.FOOTER_LINE) ; move cursor to the starting position for writing
-      main.prints(view.BLANK_LINE79)
+      main.prints(view.BLANK_ROW)
       txt.plot(0, view.FOOTER_LINE)
       main.update_tracker()
       goto main.start.NAVCHARLOOP  ; start main loop
     }
-    if cmdchar != $0d {       ; any character now but <ENTER>
-      if cmdchar == $22 {
-        cbm.CHROUT($80)
+    when cmdchar {
+      $00 -> {}
+      $0d -> {
+        cmdBuffer[cmdlen] = 0
+        strings.strip(command.cmdBuffer)
+        return
       }
-      txt.chrout(cmdchar)
-    }
-    else {
-      ; reads in the command and puts it into view.cmdBuffer for additional
-      ; processing in the view code
-      ubyte i
-      for i in 0 to strings.length(cmdBuffer) - 1 {
-        cmdBuffer[i] = txt.getchr(i+1, view.FOOTER_LINE)
+      $14, $08, $7f -> {   ; backspace variants, the ':' stays
+        if cmdlen != 0 {
+          cmdlen--
+          txt.plot(cmdlen+1, view.FOOTER_LINE)
+          plat.putc($20)
+          txt.plot(cmdlen+1, view.FOOTER_LINE)
+        }
       }
-      strings.strip(command.cmdBuffer)
-      return
+      else -> {
+        if cmdchar >= 32 and cmdchar <= 126 and cmdlen < len(cmdBuffer)-2 and cmdlen < plat.COLS-2 {
+          cmdBuffer[cmdlen] = cmdchar
+          cmdlen++
+          plat.putc(cmdchar)
+        }
+      }
     }
     goto CMDINPUT
   }
@@ -250,9 +146,7 @@ command {
     ; catch wq, wq!
     if cmd_length <= 4 and strings.compare(cmd, "wq") == 0 or strings.compare(cmd, "wq!") == 0 {
       main.save_current_file() 
-      txt.clear_screenchars($20)
-      txt.iso_off()
-      sys.exit(0)
+      plat.quit()
     }
 
     when command.cmdBuffer[0] {
@@ -294,9 +188,7 @@ command {
           return
         }
         else {
-          txt.clear_screenchars($20)
-          txt.iso_off()
-          sys.exit(0)
+          plat.quit()
         }
       }
       'w' -> {
@@ -307,13 +199,14 @@ command {
         flags.FIRST_COMMAND = false
         ; 'w' is for "write" - fn1 is the filename
         if strings.length(fn1) > 0 {
-          if diskio.exists(fn1) and not force {
+          if plat.exists(fn1) and not force {
             main.warn("File Exists. Use w! to override ...")
           }
           else {
-            diskio.delete(fn1)
-            main.save_as(fn1)
-            void strings.copy(fn1, main.doc.filepath)
+            plat.delete(fn1)
+            if main.save_as(fn1) {
+              void strings.copy(fn1, main.doc.filepath)
+            }
           }
         }
         else {
@@ -332,7 +225,7 @@ command {
       else -> {
         main.warn("Not an editor command!")
         txt.plot(0, view.FOOTER_LINE) ; move cursor to the starting position for writing
-        main.prints(view.BLANK_LINE79)
+        main.prints(view.BLANK_ROW)
         txt.plot(0, view.FOOTER_LINE)
         main.update_tracker()
         goto main.start.NAVCHARLOOP  ; start main loop
@@ -344,7 +237,6 @@ command {
 main {
   ubyte MODE         = mode.NAV ; initial mode is NAV
   uword NAVCHARCOUNT = 0        ; the main "clock"
-  uword lineCount
 
   struct Document {
     ubyte tabNum    ; 0
@@ -366,9 +258,8 @@ main {
     ubyte nullbyte
   }
 
+  ; the working copy of one line: see get_Line_addr()
   struct Line {
-    ^^Line prev
-    ^^Line next
     ^^ubyte text
     ubyte data00, data01, data02, data03, data04, data05, data06, data07
     ubyte data08, data09, data10, data11, data12, data13, data14, data15
@@ -382,83 +273,19 @@ main {
     ubyte data72, data73, data74, data75, nullbyte
   }
 
-  ^^Document doc
+  ^^Document doc = memory("doc", sizeof(Document), 1)
 
-  const uword MaxLength  = 76
-  const uword LineSize   = sizeof(Line)
+  const uword MaxLength  = doctext.WIDTH
 
-  const uword MaxLines   = 256
-  const uword BufferSize = MaxLines * LineSize
-  uword Buffer           = memory("Buffer", BufferSize, 1)
+  ^^Line scratch = memory("scratch", sizeof(Line), 1)
 
-  ^^Line next = Buffer
-  ^^Line head = 0 ; points to first line
-  ^^Line tail = 0 ; points to last line
-
-  ; Allocator for linked list of Line instances contributed
-  ; by MarkTheStrange on #prog8-dev
-  sub allocLine(^^ubyte initial) -> ^^Line {
-    ^^Line this = next                   ; return next space
-    ; don't run past end of Buffer
-    if next > (Buffer+BufferSize-LineSize) return $0000
-    next += 1                            ; advance by sizeof struct
-    ; link the new line in
-    if head == 0 {
-        head = this
-    } else {
-        tail.next = this
-    }
-
-    ; populate the fields
-    this.prev = tail
-    this.next = 0
-    this.text = &this.data00            ; text buffer embedded in struct
-    void strings.copy(initial, this.text)
-    @(this.text + MaxLength) = 0         ; null terminate
-
-    tail = this
-    ; and return
-    return this
-  }
-
-  sub allocNewLine(^^ubyte initial) -> ^^Line {
-    ^^Line this = next                   ; return next space
-    ; don't run past end of Buffer
-    if next > (Buffer+BufferSize-LineSize) return $0000
-    next += 1                            ; advance by sizeof struct
-    ; populate the fields
-    this.prev = 0
-    this.next = 0
-    this.text = &this.data00            ; text buffer embedded in struct
-    strings.rstrip(initial)
-    void strings.copy(view.BLANK_LINE79, this.text) ; initialize with BLANK_LINE79, eliminates random garbage
-    void strings.copy(initial, this.text); then add text
-    @(this.text + MaxLength) = 0         ; null terminate
-    return this
-  }
-
-  sub freeAll() {
-    next = Buffer
-    sys.memset(next, BufferSize, 0)
-  }
+  alias lineCount = doctext.count
 
   ; initiates initial buffer without a file, jumps to REPLACEMODE
   ; so user can start typing right away
   sub init_empty_buffer(ubyte lines) {
-    freeAll()
+    doctext.clear()
     txt.plot(view.LEFT_MARGIN, view.TOP_LINE)
-    flags.UNSAVED = false
-    main.lineCount = 0
-
-    ubyte idx   = 0
-    str lineBuffer  = " " * (MaxLength + 1)
-
-    repeat lines {
-      uword lineAddr = allocLine(lineBuffer)
-      idx = main.lineCount as ubyte
-      view.INDEX[idx] = lineAddr
-      main.lineCount++
-    }
     flags.UNSAVED = true
     main.draw_screen()
     cursor.place(view.LEFT_MARGIN, view.TOP_LINE)
@@ -469,71 +296,23 @@ main {
     strings.strip(filepath)
     txt.plot(view.LEFT_MARGIN, view.TOP_LINE)
 
-    if not diskio.exists(filepath) {
+    if not plat.exists(filepath) {
       warn("File does not exist!")
       return false
     }
 
     info("Loading file ...")
 
-    ; only do this if file wanted is found
-    freeAll()
-
-    flags.UNSAVED = false
-    main.lineCount = 0
-
-    ubyte idx   = 0
-    READFILE:
-    cbm.CLEARST() ; set so READST() is initially known to be clear
-    if diskio.f_open(filepath) {
-      while cbm.READST() == 0 {
-        ;; reset these buffers
-        str lineBuffer  = " " * (MaxLength + 1)
-        ; read line
-        ubyte length
-        length, void = diskio.f_readline(lineBuffer)
-
-        ; normalize line ending + whitespace
-        strings.rstrip(lineBuffer)
-
-        ; sanitize to match Insert/Replace printable ISO policy
-        ubyte i
-        for i in 0 to MaxLength-1 {
-          ubyte ch = lineBuffer[i]
-          if ch == 0 {
-            break
-          }
-          if ch < 32 or ch > 126 {
-            lineBuffer[i] = $20
-          }
-        }
-
-        ; enforce max length AFTER sanitizing
-        if length > MaxLength {
-          str tmp = " " * (MaxLength + 1)
-          strings.slice(lineBuffer, 0, MaxLength, tmp)
-          void strings.copy(tmp, lineBuffer)
-        }
-
-        uword lineAddr = allocLine(lineBuffer)
-        ; out of memory == $0000, stop reading.
-        if lineAddr == $0000 {
-            warn("File too big!")
-            break
-        }
-        idx = main.lineCount as ubyte
-        view.INDEX[idx] = lineAddr
-        main.lineCount++
-      }
-      diskio.f_close()
-      txt.clear_screen()
-      void strings.copy(filepath,doc.filepath)
-    }
-    else {
-      diskio.f_close()
+    if not doctext.load(filepath) {
       warn("Can't open file!")
       return false
     }
+    flags.UNSAVED = false
+    if doctext.truncated {
+      warn("File too big!")
+    }
+    txt.clear_screen()
+    void strings.copy(filepath,doc.filepath)
     return true
   }
 
@@ -541,37 +320,13 @@ main {
     txt.clear_screen()
     txt.plot(0,view.TOP_LINE)
     init_empty_buffer(1)
-    repeat 20 {
-      txt.plot(0, txt.get_row())
-      say("~    ")
-    }
-    say("~                             XVI - Commander X16 Vi               ")
-    say("~                                                                  ")
-    say("~                                version 2.0.RC-0                  ")
-    say("~                                                                  ")
-    say("~                      by Brett Estrade, Andrew Gillham, et al.    ")
-    say("~                                                                  ")
-    say("~                     XVI is open source and freely distributable  ")
-    say("~                    writting using the Prog8 Programming Language ")
-    say("~                                                                  ")
-    say("~                             Sponsor Prog8 development!           ")
-    say("~                                                                  ")
-    say("~                                  http://p8ug.org                 ")
-    say("~                                                                  ")
-    say("~                  type  <esc>R to open new buffer in Replace mode ")
-    say("~                  type  <esc>i to open new buffer in Insert  mode ")
-    say("~                  type  :e filepath<Enter>   to load file to edit ")
-    say("~                  type  :q<Enter>            to exit              ")
-    repeat 21 {
-      txt.plot(0, txt.get_row())
-      say("~    ")
-    }
+    plat.splash_text()
   }
 
   sub clear_splash() {
     txt.clear_screen()
     txt.plot(0,view.TOP_LINE+1)
-    repeat 55 {
+    repeat view.HEIGHT-1 {
       txt.plot(0, txt.get_row())
       say("~    ")
     }
@@ -591,62 +346,28 @@ main {
      }
 
      void strings.append(oldback, ".swp") ; basically vi's .swp file
-     if diskio.exists(oldback) {
-       diskio.delete(oldback)
+     if plat.exists(oldback) {
+       plat.delete(oldback)
      }
-     diskio.rename(doc.filepath, oldback)
-     save_as(doc.filepath)
-     diskio.delete(oldback)
+     plat.rename(doc.filepath, oldback)
+     if save_as(doc.filepath) {
+       plat.delete(oldback)
+     }
   }
 
-  ; Safe save: never dereference line when it becomes 0
-  sub save_as(str filepath) {
+  sub save_as(str filepath) -> bool {
     info_noblock("saving ...")
 
-    ubyte i
-    ubyte ub
-    const ubyte maxLen = main.MaxLength
-
-    void diskio.f_open_w_seek(filepath)
-
-    if main.lineCount == 0 {
-      diskio.f_close_w()
+    bool ok = doctext.save(filepath)
+    if ok {
       flags.UNSAVED = false
-      info_noblock("          ")
-      return
+    }
+    else {
+      warn("Write failed!")
     }
 
-    str writeBuffer = " " * maxLen
-    ^^Line line = view.INDEX[0]
-
-    while line != 0 {
-      ; prepare this line
-      void strings.copy(line.text, writeBuffer)
-      strings.rstrip(writeBuffer)
-
-      ; write only printable ISO bytes from the fixed-width line buffer
-      for i in 0 to maxLen-1 {
-        ub = writeBuffer[i]
-        if ub == 0 {        ; stop at terminator
-          break
-        }
-        if ub >= 32 and ub <= 126 {
-          void diskio.f_write(&ub, 1)
-        }
-      }
-
-      ; newline (LF)
-      ub = $0a
-      void diskio.f_write(&ub, 1)
-
-      ; advance
-      line = line.next
-    }
-
-    diskio.f_close_w()
-
-    flags.UNSAVED     = false
     info_noblock("          ")
+    return ok
   }
 
   sub navchar_start() {
@@ -662,18 +383,19 @@ main {
   ubyte last_char
   ubyte col
   ubyte row
-  ubyte numbers
+  uword numbers
 
   sub start () {
-    txt.iso()
+    plat.init()
     doc.tabNum               = 0 ; for future proofing
     doc.charset              = 0 ; for future proofing
     doc.startBank            = 1 ; for future proofing
-    doc.firstLine            = Buffer
     doc.filepath             = " " * 80
     @(doc.filepath+80)       = 0
 
-    main.lineCount            = 0
+    scratch.text             = &scratch.data00
+    @(scratch.text+MaxLength) = 0
+    doctext.init(sys.progend(), plat.TEXT_TOP)
     main.MODE = mode.INIT
 
     sys.wait(20)
@@ -688,7 +410,7 @@ main {
 
     repeat {
     NAVCHARLOOP:
-        char = cbm.GETIN2()
+        char = plat.getkey()
         navchar_start()
         if char == $00 continue
     SKIP_NAVCHARLOOP:
@@ -775,7 +497,7 @@ main {
         PROCESS_COMMAND:
         ; clear command line
         txt.plot(0, view.FOOTER_LINE)
-        prints(view.BLANK_LINE79)
+        prints(view.BLANK_ROW)
         main.update_tracker()
         command.process()
 
@@ -830,9 +552,7 @@ main {
             return
           }
           save_current_file()
-          txt.clear_screenchars($20)
-          txt.iso_off()
-          sys.exit(0)
+          plat.quit()
         }
       }
       'P' -> {
@@ -844,7 +564,7 @@ main {
       ; E D I T I N G
       'r' -> { ; replace char
         RLOOP1:
-        void, char = cbm.GETIN()
+        char = plat.getkey()
         ; go back to RLOOP1 if there's nothing input via keyboard
         if char == $00 {
           goto RLOOP1
@@ -871,19 +591,19 @@ main {
 
         RLOOP2:
         main.MODE = mode.REPLACE
-        void, char = cbm.GETIN()
+        char = plat.getkey()
         if char == $00 {
           goto RLOOP2
         }
         when char {
           $1b -> {       ; <esc>
             toggle_nav()
-            main.save_line_buffer()
+            main.end_line_edit()
             return
           }
           $0d -> {       ; <return> == esc + 'o'
             toggle_nav()
-            main.save_line_buffer()
+            main.end_line_edit()
             char = $6f ; 'o'
             goto main.start.SKIP_NAVCHARLOOP
           }
@@ -897,10 +617,6 @@ main {
             ; only accept printable ISO range
             if char < 32 or char > 126 {
               goto RLOOP2
-            }
-            ; clear quote mode before emitting a quote
-            if char == $22 {
-              cbm.CHROUT($80)
             }
             flags.UNSAVED = true
             goto RPUTCHAR
@@ -921,11 +637,9 @@ main {
           main.update_tracker()
           goto RLOOP2
         }
-        cursor.saved_char = txt.getchr(view.c()+1,view.r())
-        cbm.CHROUT(char)
+        main.replace_char(char)
         flags.UNSAVED = true
-        txt.plot(view.c(),view.r())
-        cursor.place(view.c(),view.r())
+        advance()
         main.update_tracker()
         goto RLOOP2
       }
@@ -960,6 +674,9 @@ main {
             cursor.place(ac, ar)
           }
         }
+        else if char == 'a' {
+          pan_right()
+        }
         else {
           cursor.place(view.RIGHT_MARGIN-1, ar)
         }
@@ -969,19 +686,19 @@ main {
 
         ILOOP:
         main.MODE = mode.INSERT
-        void, char = cbm.GETIN()
+        char = plat.getkey()
         if char == $00 {
           goto ILOOP
         }
         when char {
           $1b -> {       ; <esc>
             toggle_nav()
-            main.save_line_buffer()
+            main.end_line_edit()
             return
           }
           $0d -> {       ; <return> == esc + 'o'
             toggle_nav()
-            main.save_line_buffer()
+            main.end_line_edit()
             char = $6f ; 'o'
             goto main.start.SKIP_NAVCHARLOOP
           }
@@ -1004,13 +721,18 @@ main {
           ; this preserves the behavior of vim when in insert mode
           ; and hitting backspace, runs into the left margin, nothing
           ; is done
-          goto ILOOP
+          if doctext.first_col == 0 {
+            goto ILOOP
+          }
+          pan_left(0)
         }
         cursor.saved_char = $20
         cursor.restore_current_char();
         txt.plot(view.c()-1, view.r())
         cursor.place(view.c(), view.r())
+        ubyte bc = view.c()
         main.delete_xy_shift_left()
+        cursor.place(bc, view.r())   ; (it moves back at the end of a line)
         main.update_tracker()
         goto ILOOP
 
@@ -1029,7 +751,7 @@ main {
           goto ILOOP
         }
         main.insert_char_shift_right(char)
-        cursor.place(view.c()+1,view.r())
+        advance()
         main.update_tracker()
         goto ILOOP
       }
@@ -1051,97 +773,6 @@ main {
   }
 
   sub key_mode_insert() {
-    when char {
-      'a','i' -> { ; append after cursor (vim-like)
-        ISTART:
-        ; move one char right before inserting (append-after-cursor)
-        ubyte ac = view.c()
-        ubyte ar = view.r()
-        if ac < view.LEFT_MARGIN {
-          ac = view.LEFT_MARGIN
-        }
-        if ac < view.RIGHT_MARGIN-1 {
-          if char == 'a' {
-            cursor.place(ac+1, ar)
-          }
-          else if char == 'i' {
-            cursor.place(ac, ar)
-          }
-        }
-        else {
-          cursor.place(view.RIGHT_MARGIN-1, ar)
-        }
-
-        main.MODE = mode.INSERT
-        main.update_tracker()
-
-        ILOOP:
-        main.MODE = mode.INSERT
-        void, char = cbm.GETIN()
-        if char == $00 {
-          goto ILOOP
-        }
-        when char {
-          $1b -> {       ; <esc>
-            toggle_nav()
-            main.save_line_buffer()
-            return
-          }
-          $0d -> {       ; <return> == esc + 'o'
-            toggle_nav()
-            main.save_line_buffer()
-            char = $6f ; 'o'
-            goto main.start.SKIP_NAVCHARLOOP
-          }
-          $14, $08, $7f -> {  ; backspace variants (DEL/BS)
-            goto IBACKSPACE
-          }
-          else -> {
-            ; only accept printable ISO range
-            if char < 32 or char > 126 {
-              goto ILOOP
-            }
-            goto IINSERTCHAR
-          }
-        }
-        goto ILOOP
-
-        IBACKSPACE:
-        ; delete char to the left (vim-ish insert backspace)
-        if view.c() <= view.LEFT_MARGIN {
-          ; this preserves the behavior of vim when in insert mode
-          ; and hitting backspace, runs into the left margin, nothing
-          ; is done
-          goto ILOOP
-        }
-        cursor.saved_char = $20
-        cursor.restore_current_char();
-        txt.plot(view.c()-1, view.r())
-        cursor.place(view.c(), view.r())
-        main.delete_xy_shift_left()
-        main.update_tracker()
-        goto ILOOP
-
-        IINSERTCHAR:
-        ; keep cursor within editable region
-        if view.c() < view.LEFT_MARGIN {
-          txt.plot(view.LEFT_MARGIN, view.r())
-          cursor.place(view.c(),view.r())
-          main.update_tracker()
-          goto ILOOP
-        }
-        if view.c() == view.RIGHT_MARGIN {
-          txt.plot(view.RIGHT_MARGIN-1, view.r())
-          cursor.place(view.c(),view.r())
-          main.update_tracker()
-          goto ILOOP
-        }
-        main.insert_char_shift_right(char)
-        cursor.place(view.c()+1,view.r())
-        main.update_tracker()
-        goto ILOOP
-      }
-    }
   }
 
   sub key_mode_replace() {
@@ -1157,47 +788,33 @@ main {
     return curr_line
   }
 
+  ; fills the working copy with the line at screen row r and returns it.
+  ; there is only one copy: a change to it needs commit_line() before the
+  ; next line is looked at.
   sub get_Line_addr(ubyte r) -> uword {
-    uword curr_line = main.get_line_num(r) ; 1-based
-    ubyte idxw = (curr_line as ubyte) - 1  ; 0-based
-    return view.INDEX[idxw]                ; only OK if you guarantee idxw <= 255
+    doctext.fetch(main.get_line_num(r), scratch.text)
+    return scratch
+  }
+
+  sub commit_line(ubyte r) {
+    if not doctext.commit(main.get_line_num(r), scratch.text) {
+      warn("Out of memory!")
+    }
   }
 
   sub paste_line_above() {
-    if view.CLIPBOARD == 0 {
+    if not doctext.has_yank() {
       warn("Clipboard is empty ..")
       return
     }
 
+    doctext.first_col = 0
     ubyte r = view.r()
-    uword curr_line = main.get_line_num(r)
 
-    ^^Line curr_addr = get_Line_addr(r)
-    ^^Line old_prev  = 0
-    ^^Line copy_addr = view.CLIPBOARD
-    ^^Line new_prev  = main.allocNewLine(copy_addr.text)
-    if new_prev == $0000 {
-        warn("Out of memory!")
-        return
+    if not doctext.put(main.get_line_num(r)) {
+      warn("Out of memory!")
+      return
     }
-
-    if curr_line > 1 {
-      old_prev = view.INDEX[(curr_line as ubyte) - 2]
-    }
-
-    new_prev.prev = old_prev
-    new_prev.next = curr_addr
-
-    curr_addr.prev = new_prev
-
-    if old_prev != 0 {
-      old_prev.next = new_prev
-    }
-
-    main.lineCount = view.insert_line_before(new_prev, curr_line, main.lineCount)
-
-    void debug.assert(view.INDEX[curr_line as ubyte - 1], new_prev, debug.EQ, "INDEX[curr_line as ubyte - 1] == new_prev")
-    void debug.assert(view.INDEX[curr_line as ubyte], curr_addr, debug.EQ, "INDEX[curr_line as ubyte] == curr_addr")
 
     flags.UNSAVED = true
 
@@ -1221,33 +838,18 @@ main {
   }
 
   sub paste_line_below() {
-    if view.CLIPBOARD == 0 { ; indicates empty clipboard (nothing copied yet)
+    if not doctext.has_yank() { ; indicates empty clipboard (nothing copied yet)
       warn("Clipboard is empty ..")
       return
     }
 
+    doctext.first_col = 0
     ubyte r = view.r()
 
-    uword curr_line = main.get_line_num(r) ; next_line is +1
-
-    ^^Line curr_addr = get_Line_addr(r)        ; gets memory addr of current Line
-    ^^Line copy_addr = view.CLIPBOARD
-    ^^Line new_next  = main.allocNewLine(copy_addr.text) ; new line with text from copied address
-    if new_next == $0000 {
-        warn("Out of memory!")
-        return
+    if not doctext.put(main.get_line_num(r) + 1) {
+      warn("Out of memory!")
+      return
     }
-
-    new_next.prev  = curr_addr
-    new_next.next  = curr_addr.next
-    curr_addr.next = new_next
-
-    ;; call to update INDEX
-    main.lineCount = view.insert_line_after(new_next, main.get_line_num(r), main.lineCount)
-
-    ; need to assert new address got inserted into view.INDEX
-    void debug.assert(view.INDEX[curr_line as ubyte - 1], curr_addr, debug.EQ, "INDEX[curr_line as ubyte - 1] == curr_addr")
-    void debug.assert(view.INDEX[curr_line as ubyte], new_next, debug.EQ, "INDEX[curr_line as ubyte] == new_next")
 
     ;info("p ...")
     flags.UNSAVED = true
@@ -1273,32 +875,13 @@ main {
   }
 
   sub insert_line_above() {
+    pan_home()
     ubyte r = view.r()
 
-    uword curr_line = main.get_line_num(r)
-
-    ^^Line curr_addr = get_Line_addr(r)
-    ^^Line old_prev  = 0
-    ^^Line new_prev  = main.allocNewLine("  ")
-    if new_prev == $0000 {
-        warn("Out of memory!")
-        return
+    if not doctext.insert_empty(main.get_line_num(r)) {
+      warn("Out of memory!")
+      return
     }
-
-    if curr_line > 1 {
-      old_prev = view.INDEX[(curr_line as ubyte) - 2]
-    }
-
-    new_prev.prev = old_prev
-    new_prev.next = curr_addr
-
-    curr_addr.prev = new_prev
-
-    if old_prev != 0 {
-      old_prev.next = new_prev
-    }
-
-    main.lineCount = view.insert_line_before(new_prev, curr_line, main.lineCount)
 
     flags.UNSAVED = true
 
@@ -1313,11 +896,11 @@ main {
       cursor.replace(view.LEFT_MARGIN, r)
     }
     else {
-      txt.scrolldown_nlast(r, view.LEFT_MARGIN)
+      plat.scroll_down_from(r)
       txt.plot(view.LEFT_MARGIN, r)
-      prints(view.BLANK_LINE76)
+      prints(view.BLANK_TEXT)
       txt.plot(0, view.BOTTOM_LINE+1)
-      prints(view.BLANK_LINE79)
+      prints(view.BLANK_ROW)
       txt.plot(view.LEFT_MARGIN, r)
       cursor.hide()
       cursor.place(view.LEFT_MARGIN, r)
@@ -1327,29 +910,17 @@ main {
   }
 
   sub insert_line_below() {
+    pan_home()
     ubyte r = view.r()
 
     cursor.hide()
 
     uword curr_line = main.get_line_num(r) ; next_line is +1
 
-    ^^Line curr_addr = get_Line_addr(r)        ; gets memory addr of current Line
-    ^^Line new_next  = main.allocNewLine("  ") ; creates new Line instance to insert
-    if new_next == $0000 {
-        warn("Out of memory!")
-        return
+    if not doctext.insert_empty(curr_line + 1) {
+      warn("Out of memory!")
+      return
     }
-
-    new_next.prev  = curr_addr
-    new_next.next  = curr_addr.next
-    curr_addr.next = new_next
-
-    ;; call to update INDEX
-    main.lineCount = view.insert_line_after(new_next, main.get_line_num(r), main.lineCount)
-
-    ; need to assert new address got inserted into view.INDEX
-    void debug.assert(view.INDEX[curr_line as ubyte - 1], curr_addr, debug.EQ, "INDEX[curr_line as ubyte - 1] == curr_addr")
-    void debug.assert(view.INDEX[curr_line as ubyte], new_next, debug.EQ, "INDEX[curr_line as ubyte] == new_next")
 
     ;info("o ...")
     flags.UNSAVED = true
@@ -1361,13 +932,13 @@ main {
       cursor.replace(view.LEFT_MARGIN,r)
     }
     else {
-      txt.scrolldown_nlast(r+1, view.LEFT_MARGIN)
+      plat.scroll_down_from(r+1)
 
       txt.plot(view.LEFT_MARGIN,r+1)
-      prints(view.BLANK_LINE76)
+      prints(view.BLANK_TEXT)
 
       txt.plot(0,view.BOTTOM_LINE+1)
-      prints(view.BLANK_LINE79)
+      prints(view.BLANK_ROW)
 
       ; handle lines as they shift down if adding lines mid screen on a
       ; short document
@@ -1393,9 +964,9 @@ main {
     ubyte c = view.c()
     ubyte r = view.r()
 
-    ^^Line curr_addr = get_Line_addr(r) ; line being deleted
-
-    view.CLIPBOARD = curr_addr
+    if not doctext.yank(main.get_line_num(r)) {
+      warn("Line too long to yank!")
+    }
 
     cursor.replace(c, r)
     main.update_tracker()
@@ -1405,16 +976,15 @@ main {
     ubyte c = view.c()
     ubyte r = view.r()
 
-    ^^Line curr_addr = get_Line_addr(r) ; line being deleted
+    doctext.delete_to_end(main.get_line_num(r), c-view.LEFT_MARGIN)
+    flags.UNSAVED = true
 
-    ubyte i
-    for i in (c-view.LEFT_MARGIN) to main.MaxLength-1 {
-      @(curr_addr.text + i) = $20
+    void redraw_line(get_Line_addr(r), r)
+
+    if c > view.LEFT_MARGIN {
+      c--
     }
-
-    void redraw_line(curr_addr, r)
-
-    cursor.replace(c-1, r)
+    cursor.replace(c, r)
     main.update_tracker()
   }
 
@@ -1431,14 +1001,9 @@ main {
 
     ; safety/vim-like: if only one line, clear it instead of deleting it
     if main.lineCount == 1 {
+      void doctext.yank(1)
+      doctext.delete(1)
       ^^Line only_addr = get_Line_addr(r)
-      view.CLIPBOARD = only_addr
-
-      ubyte i
-      for i in 0 to MaxLength-1 {
-        @(only_addr.text + i) = $20
-      }
-      @(only_addr.text + MaxLength) = 0
 
       void redraw_line(only_addr, r)
 
@@ -1452,26 +1017,15 @@ main {
 
     info("cut")
 
-    ^^Line curr_addr = get_Line_addr(r) ; line being deleted
-    ^^Line prev_addr = curr_addr.prev   ; line before line being deleted
-    ^^Line next_addr = curr_addr.next   ; line after line being deleted
-
-    ; short circuit curr_line out of links
-    if prev_addr != 0 {
-      prev_addr.next = next_addr
-    }
-    if next_addr != 0 {                   ; make sure curr_line is not last line of doc
-      next_addr.prev = prev_addr
-    }
-
     ; compute whether we just deleted the last document line
     uword deleted_line = main.get_line_num(r)
 
-    main.lineCount = view.delete_item(deleted_line, main.lineCount)
+    if not doctext.yank(deleted_line) {
+      warn("Line too long to yank!")
+    }
+    doctext.delete(deleted_line)
 
     draw_screen()
-
-    view.CLIPBOARD   = curr_addr ; save deleted address to clipboard for later pasting
 
     flags.UNSAVED = true
 
@@ -1503,20 +1057,21 @@ main {
   }
 
   sub printLineNum (uword number) {
+    if not plat.LINE_NUMBERS {
+      return
+    }
     ubyte c = view.c()
     txt.plot(0, view.r())
-    txt.color($f)
+    plat.color($f)
     prints("    ")
     txt.plot(0, view.r())
     printW(number)
-    txt.color($1)
+    plat.color($1)
     txt.plot(c, view.r())
   }
 
   sub draw_screen () {               ; NOTE: assumes view.CURR_TOP_LINE is correct
       info_noblock("             ")
-      ubyte idx = (view.CURR_TOP_LINE as ubyte) - 1
-      ^^Line line = view.INDEX[idx]
       ubyte r
       txt.plot(view.LEFT_MARGIN, view.TOP_LINE)
       ubyte m,n
@@ -1529,30 +1084,28 @@ main {
         m = remaining as ubyte
         n = (view.HEIGHT - remaining) as ubyte
       }
-      uword lineNum = idx + 1
+      uword lineNum = view.CURR_TOP_LINE
       str tmp = " " *main.MaxLength
       repeat m {
         r = view.r()
         txt.plot(0, r)
-        prints(view.BLANK_LINE79)
+        prints(view.BLANK_ROW)
         txt.plot(0, r)
         if main.MODE != mode.INIT {      ; prevent line '1' from showing in splash on start
           main.printLineNum(lineNum)
         }
         txt.plot(view.LEFT_MARGIN, r)
 
-        void strings.copy(line.text,tmp) ; also figure out why I have to do this to get rid of errant space in next line
+        doctext.fetch(lineNum, tmp)
         strings.rstrip(tmp)
         prints(tmp)
         txt.plot(view.LEFT_MARGIN, r+1)
 
-        ; get next Line
-        line = line.next
         lineNum++
       }
       repeat n {
         r = view.r()
-        prints(view.BLANK_LINE79)
+        prints(view.BLANK_ROW)
         txt.plot(0,r)
         prints("~   ")
         txt.plot(0,r+1)
@@ -1564,28 +1117,22 @@ main {
       if lineNum > main.lineCount {
         return
       }
-      ubyte idx = lineNum as ubyte - 1
-      uword addr = view.INDEX[idx]
-      ^^Line line = addr
-      addr = line.next
+      doctext.fetch(lineNum, scratch.text)
       txt.plot(0, view.BOTTOM_LINE)
-      prints(view.BLANK_LINE79)
+      prints(view.BLANK_ROW)
       txt.plot(0, view.BOTTOM_LINE)
       main.printLineNum(lineNum)
       txt.plot(view.LEFT_MARGIN, view.BOTTOM_LINE)
-      say(line.text)
+      say(scratch.text)
   }
 
   sub draw_top_line (uword lineNum) {
       if lineNum < 1 {
         return
       }
-      ubyte idx = lineNum as ubyte - 1
-      uword addr = view.INDEX[idx]
-      ^^Line line = addr
-      addr = line.next
+      doctext.fetch(lineNum, scratch.text)
       txt.plot(view.LEFT_MARGIN, view.TOP_LINE)
-      prints(line.text)
+      prints(scratch.text)
       txt.plot(0, view.TOP_LINE)
       main.printLineNum(lineNum)
   }
@@ -1621,6 +1168,7 @@ main {
 
   ; ^
   sub jump_to_left() {
+      pan_home()
       cursor.restore_current_char()
       txt.plot(view.LEFT_MARGIN, view.r())
       default_col = view.c()
@@ -1669,6 +1217,17 @@ main {
       return
     }
 
+    ; the end of the line must be in the window, but not on its last columns
+    uword length = doctext.length(main.get_line_num(r))
+    if length <= doctext.first_col or length >= doctext.first_col + doctext.WIDTH - 1 {
+      if length < doctext.WIDTH - 1 {
+        pan_home()
+      }
+      else {
+        pan_to(length - doctext.PAN)
+      }
+    }
+
     ubyte end_col = get_end_col(r)
 
     cursor.restore_current_char()
@@ -1680,6 +1239,7 @@ main {
 
   ; g
   sub jump_to_begin() {
+      pan_home()
       if main.lineCount > view.HEIGHT {
         view.CURR_TOP_LINE = 1
         draw_screen()
@@ -1690,18 +1250,20 @@ main {
 
   ; G
   sub jump_to_end() {
+      pan_home()
       if main.lineCount > view.HEIGHT {
         view.CURR_TOP_LINE = main.lineCount - view.HEIGHT + 1
         draw_screen()
         cursor.replace(view.LEFT_MARGIN, view.BOTTOM_LINE)
       }
       else {
-        cursor.place(view.LEFT_MARGIN, (main.lineCount as ubyte) + 1)
+        cursor.place(view.LEFT_MARGIN, (main.lineCount as ubyte) + view.TOP_LINE - 1)
       }
       main.update_tracker()
   }
 
   sub jump_to_line(uword tline) {
+    pan_home()
     if tline == 0 or tline > main.lineCount {
       jump_to_end()
       return
@@ -1729,6 +1291,7 @@ main {
     if view.CURR_TOP_LINE == 1 and view.r() == view.TOP_LINE {
       return
     }
+    pan_for_row(view.r()-1)
     ubyte curr_line = view.r()
     ubyte curr_col  = view.c()
     ubyte next_line = curr_line-1;
@@ -1751,12 +1314,12 @@ main {
 
     if curr_line == view.TOP_LINE {
       cursor.hide()
-      txt.scrolldown()
+      plat.scroll_view_down()
       void decr_top_line(1)
       txt.plot(view.LEFT_MARGIN, view.TOP_LINE)
       draw_top_line(view.CURR_TOP_LINE)
       txt.plot(0, view.BOTTOM_LINE+1) ; blank footer line
-      prints(view.BLANK_LINE79)
+      prints(view.BLANK_ROW)
       cursor.replace(next_col, curr_line)
     }
     else {
@@ -1780,6 +1343,7 @@ main {
     if view.CURR_TOP_LINE == lastTop and view.r() == view.BOTTOM_LINE {
       return
     }
+    pan_for_row(view.r()+1)
 
     ubyte curr_line = view.r()
     ubyte curr_col  = view.c()
@@ -1805,14 +1369,7 @@ main {
       cursor.hide()
       void incr_top_line(1)          ; increment CURR_TOP_LINE
 
-      txt.plot(0, view.FOOTER_LINE)  ; blank footer line
-      prints(view.BLANK_LINE79)
-
-      txt.plot(0, 1)                 ; blank top line
-      say(view.BLANK_LINE79)
-      prints(view.BLANK_LINE79)
-
-      txt.scroll_up()
+      plat.scroll_view_up()
       draw_bottom_line(view.CURR_TOP_LINE + view.HEIGHT - 1)
 
       cursor.replace(next_col, curr_line)
@@ -1833,7 +1390,7 @@ main {
   ; prints address 'addr' at row 'r'
   sub redraw_line(^^Line addr, ubyte r) -> ubyte {
     txt.plot(view.LEFT_MARGIN,r)
-    prints(view.BLANK_LINE76)
+    prints(view.BLANK_TEXT)
     txt.plot(view.LEFT_MARGIN,r)
 
     if addr == 0 {
@@ -1847,17 +1404,11 @@ main {
     return strings.length(tmp) ; <- still we can get length, and this can be helpful
   }
 
-  sub save_line_buffer() {
+  ; leaving insert or replace mode: the text is up to date already, what's
+  ; left is the cursor
+  sub end_line_edit() {
     ubyte c = view.c()
     ubyte r = view.r()
-
-    ^^Line curr_addr = get_Line_addr(r)
-
-    ubyte i
-    for i in 0 to MaxLength-1 {
-      @(curr_addr.text + i) = txt.getchr(view.LEFT_MARGIN + i, r)
-    }
-    @(curr_addr.text + MaxLength) = 0      ; null terminate
 
     cursor.replace(c,r)
     txt.plot(c,r)
@@ -1890,6 +1441,8 @@ main {
     ; replace char at (c,r)
     @(curr_addr.text + (c - view.LEFT_MARGIN)) = tchar
     @(curr_addr.text + MaxLength) = 0       ; null terminate
+    commit_line(r)
+    flags.UNSAVED = true
     cursor.saved_char = tchar
 
     ; redraw line
@@ -1917,15 +1470,11 @@ main {
       return
     }
 
-    ^^Line curr_addr = get_Line_addr(r)
-
-    ubyte i
-    for i in view.RIGHT_MARGIN-1 to c+1 step -1 {
-      @(curr_addr.text + (i - view.LEFT_MARGIN)) = @(curr_addr.text + (i - view.LEFT_MARGIN - 1))
+    if not doctext.insert_at(main.get_line_num(r), c-view.LEFT_MARGIN, tchar) {
+      warn("Out of memory!")
+      return
     }
-
-    @(curr_addr.text + (c - view.LEFT_MARGIN)) = tchar
-    @(curr_addr.text + MaxLength) = 0       ; null terminate
+    ^^Line curr_addr = get_Line_addr(r)
     flags.UNSAVED = true
 
     cursor.saved_char = tchar
@@ -1954,23 +1503,12 @@ main {
       return
     }
 
-    ^^Line curr_addr = get_Line_addr(r)    ; gets memory addr of current Line
-
-    ; remove char at (c,r) then shift everything to the left
-    @(curr_addr.text + (c - view.LEFT_MARGIN)) = $20
+    ; remove char at (c,r), the rest of the line closes up
+    doctext.delete_at(main.get_line_num(r), c-view.LEFT_MARGIN)
     cursor.saved_char = $20
 
-    ; shift left within the fixed-width buffer [0..MaxLength-1]
-    ubyte i
-    ubyte start = c - view.LEFT_MARGIN
-    for i in start to MaxLength-2 {
-      @(curr_addr.text + i) = @(curr_addr.text + i + 1)
-    }
-    @(curr_addr.text + (MaxLength - 1)) = $20
-    @(curr_addr.text + MaxLength) = 0     ; null terminate
-
     ; redraw + get visible length from redraw_line()
-    ubyte length = redraw_line(curr_addr, r)
+    ubyte length = redraw_line(get_Line_addr(r), r)
 
     ; keep cursor in a sane spot
     if length == 0 {
@@ -1999,16 +1537,76 @@ main {
     if view.c() > view.LEFT_MARGIN {
       cursor.place(view.c()-1,view.r())
     }
+    else if doctext.first_col != 0 {
+      pan_left(1)
+    }
     default_col = view.c()
     main.update_tracker()
   }
 
   sub cursor_right_on_l () {
-    if view.c() < view.RIGHT_MARGIN {
-      cursor.place(view.c()+1,view.r())
+    ubyte c = view.c()
+    if c >= view.RIGHT_MARGIN-1 and doctext.length(main.get_line_num(view.r())) > doctext.first_col + (c - view.LEFT_MARGIN) + 1 {
+      pan_right()
+    }
+    else if c < view.RIGHT_MARGIN {
+      cursor.place(c+1,view.r())
     }
     default_col = view.c()
     main.update_tracker()
+  }
+
+  ; the cursor to the next column while typing
+  sub advance() {
+    if view.c() >= view.RIGHT_MARGIN-1 {
+      pan_right()
+    }
+    else {
+      cursor.place(view.c()+1,view.r())
+    }
+  }
+
+  ; show the text from column first, the cursor stays where it is on screen
+  ; (so on another character, the caller moves it)
+  sub pan_to(uword first) {
+    ubyte c = view.c()
+    ubyte r = view.r()
+    doctext.first_col = first
+    draw_screen()
+    txt.plot(c, r)
+    cursor.replace(c, r)
+  }
+
+  ; pan the window and put the cursor on the column after the one it is on
+  sub pan_right() {
+    ubyte c = view.c()
+    pan_to(doctext.first_col + doctext.PAN)
+    cursor.place(c - doctext.PAN + 1, view.r())
+  }
+
+  ; pan the window left and put the cursor on the column it is on, or the
+  ; number of columns back
+  sub pan_left(ubyte back) {
+    ubyte c = view.c()
+    ubyte shift = doctext.PAN
+    if doctext.first_col < shift {
+      shift = doctext.first_col as ubyte
+    }
+    pan_to(doctext.first_col - shift)
+    cursor.place(c + shift - back, view.r())
+  }
+
+  sub pan_home() {
+    if doctext.first_col != 0 {
+      pan_to(0)
+    }
+  }
+
+  ; going to the line at this row: it may end before the window
+  sub pan_for_row(ubyte row) {
+    if doctext.first_col != 0 and doctext.length(main.get_line_num(row)) <= doctext.first_col {
+      pan_to(0)
+    }
   }
 
   ; util functions
@@ -2017,23 +1615,19 @@ main {
     ubyte Y = view.r()
 
     ; Always draw tracker on the footer line only
-    txt.plot(2, view.FOOTER_LINE)
-    prints(view.BLANK_LINE76)
-
     ; Use a known color scheme for footer baseline (optional)
     ; If you don't want this, remove these two lines.
-    txt.color2($1,$6)   ; white on blue (example), match your normal scheme
+    plat.colors($1,$6)   ; white on blue (example), match your normal scheme
 
+    txt.plot(0, view.FOOTER_LINE)
+    prints(view.BLANK_ROW)
     txt.plot(1, view.FOOTER_LINE)
 
     if flags.VERBOSE_STATUS == false {
-      txt.plot(0, view.FOOTER_LINE)
-      prints(view.BLANK_LINE79)
-      txt.plot(1, view.FOOTER_LINE)
       if @(doc.filepath+1) != $20 {
-        cbm.CHROUT($22)
+        plat.putc($22)
         prints(doc.filepath)
-        cbm.CHROUT($22)
+        plat.putc($22)
         if flags.UNSAVED == true {
           prints(" [modified]")
         }
@@ -2044,17 +1638,17 @@ main {
       else {
         prints("[unsaved buffer]")
       }
-      txt.plot(79-12, view.FOOTER_LINE)
+      txt.plot(plat.COLS-13, view.FOOTER_LINE)
       printW(Y - view.TOP_LINE + 1)
       prints(",")
-      printW(X - view.LEFT_MARGIN + 1)
-      txt.plot(79-3, view.FOOTER_LINE)
+      printW(doctext.first_col + (X - view.LEFT_MARGIN) + 1)
+      txt.plot(plat.COLS-4, view.FOOTER_LINE)
       printW(main.lineCount)
     }
     else {
       printw(main.lineCount)
       prints(" lines, x: ")
-      printw(X - view.LEFT_MARGIN + 1)
+      printw(doctext.first_col + (X - view.LEFT_MARGIN) + 1)
       prints(", y: ")
       printw(Y - view.TOP_LINE + 1)
       prints(" TOP: ")
@@ -2065,11 +1659,11 @@ main {
       printw(main.NAVCHARCOUNT)
 
       ; Status badge MUST be on footer line (bugfix)
-      txt.plot(79-9, view.FOOTER_LINE)
+      txt.plot(plat.COLS-10, view.FOOTER_LINE)
       if flags.UNSAVED == true {
-        txt.color2($6,$1)
+        plat.colors($6,$1)
         prints("(UNSAVED)")
-        txt.color2($1,$6)
+        plat.colors($1,$6)
       }
       else if main.MODE > mode.INIT {
         prints("( SAVED )")
@@ -2095,21 +1689,20 @@ main {
   }
 
   sub prints (str x) {
-    cbm.CHROUT($80)
-    txt.print(x)
+    plat.print(x)
   }
 
   sub say (str x) {
-    txt.print(x)
-    txt.nl()
+    plat.print(x)
+    plat.nl()
   }
 
   sub printw (uword x) {
-    txt.print_uw0(x)
+    plat.print(conv.str_uw0(x))
   }
 
   sub printW (uword x) {
-    txt.print_uw(x)
+    plat.print(conv.str_uw(x))
   }
 
   sub info_noblock_LEFT(str message) {
@@ -2119,9 +1712,9 @@ main {
   sub alert_noblock_LEFT(str message, ubyte color1, ubyte color2) {
     ubyte length = strings.length(message)
     txt.plot(1, 0)
-    txt.color2(color1, color2)
+    plat.colors(color1, color2)
     prints(message)
-    txt.color2($1, $6) ; sets text back to default, white on blue
+    plat.colors($1, $6) ; sets text back to default, white on blue
   }
 
   sub info_noblock(str message) {
@@ -2130,10 +1723,18 @@ main {
 
   sub alert_noblock(str message, ubyte color1, ubyte color2) {
     ubyte length = strings.length(message)
-    txt.plot(78-length, 0)
-    txt.color2(color1, color2)
+    txt.plot(right_col(length), 0)
+    plat.colors(color1, color2)
     prints(message)
-    txt.color2($1, $6) ; sets text back to default, white on blue
+    plat.colors($1, $6) ; sets text back to default, white on blue
+  }
+
+  ; the column of a message that ends at the right side of the top row
+  sub right_col(ubyte length) -> ubyte {
+    if length >= plat.COLS-2 {
+      return 0
+    }
+    return plat.COLS-2-length
   }
 
   sub info(str message) {
@@ -2148,50 +1749,15 @@ main {
     ubyte c = view.c()
     ubyte r = view.r()
     ubyte length = strings.length(message)
-    txt.plot(78-length, 0)
-    txt.color2(color1, color2)
+    txt.plot(right_col(length), 0)
+    plat.colors(color1, color2)
     prints(message)
     sys.wait(delay)
-    txt.plot(78-length, 0)
-    txt.color2($1, $6) ; sets text back to default, white on blue
+    txt.plot(right_col(length), 0)
+    plat.colors($1, $6) ; sets text back to default, white on blue
     txt.plot(view.LEFT_MARGIN, 0)
-    prints(view.BLANK_LINE79)
+    prints(view.BLANK_ROW)
     txt.plot(c,r)
   }
 }
 
-txt {
-  %option merge
-
-  sub scrolldown_nlast(ubyte top_row, ubyte col_start) {
-    ubyte columns, rows, j
-    columns, rows = txt.size()
-    rows--
-    while rows>top_row {
-        rows--
-        uword vera_addr = lsw(txt.VERA_TEXTMATRIX) + 256*rows
-        cx16.vaddr(msw(txt.VERA_TEXTMATRIX), vera_addr+col_start,     0 ,1) ; source row
-        cx16.vaddr(msw(txt.VERA_TEXTMATRIX), vera_addr+col_start+256, 1, 1) ; target row
-        for j in col_start to columns-1 {
-            cx16.VERA_DATA1 = cx16.VERA_DATA0       ; copy tile
-            cx16.VERA_DATA1 = cx16.VERA_DATA0       ; copy color
-        }
-    }
-  }
-
-  sub scrolldown() {
-    ubyte columns, rows
-    columns, rows = txt.size()
-    rows--
-    while rows>0 {
-        rows--
-        uword vera_addr = lsw(txt.VERA_TEXTMATRIX) + 256*rows
-        cx16.vaddr(msw(txt.VERA_TEXTMATRIX), vera_addr, 0 ,1)       ; source row
-        cx16.vaddr(msw(txt.VERA_TEXTMATRIX), vera_addr+256, 1, 1)   ; target row
-        repeat columns {
-            cx16.VERA_DATA1 = cx16.VERA_DATA0       ; copy tile
-            cx16.VERA_DATA1 = cx16.VERA_DATA0       ; copy color
-        }
-    }
-  }
-}
