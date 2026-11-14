@@ -81,3 +81,6 @@ zlib1.dll
 # Local compiler and current build output
 prog8c-*-all.jar
 xvi2.prg
+
+# Maintained VTUI charset extension source (not generated compiler output).
+!src/vtui/charset.asm

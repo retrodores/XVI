@@ -8,27 +8,39 @@ endif
 EMU ?= x16emu
 # BETA3 rejects unsigned subtraction in gapbuffer.p8 with optimization enabled.
 OPT ?= -noopt
-XVI2_SRC := src/xvi2.p8
+XVI_EDITOR ?= xvi2
+ifneq ($(filter-out xvi2 xvi,$(XVI_EDITOR)),)
+$(error XVI_EDITOR must be xvi2 or xvi)
+endif
+ifeq ($(XVI_EDITOR),xvi)
+SRC_DIRS := -srcdirs src/vtui -srcdirs src
+else
+SRC_DIRS := -srcdirs src -srcdirs src/cx16
+endif
+XVI_SRC := src/$(XVI_EDITOR).p8
 
 .DEFAULT_GOAL := build
-.PHONY: all build run br debug trace clean
+.PHONY: all build vtui run br debug trace clean
 
 all: build
 
 build:
-	$(PROG8C) $(OPT) -srcdirs src -srcdirs src/cx16 -target cx16 $(XVI2_SRC)
+	$(PROG8C) $(OPT) $(SRC_DIRS) -target cx16 $(XVI_SRC)
+
+vtui:
+	$(MAKE) build XVI_EDITOR=xvi
 
 run:
-	$(EMU) -scale 2 -prg xvi2.prg -run
+	$(EMU) -scale 2 -prg $(XVI_EDITOR).prg -run
 
 br: build
 	$(MAKE) run
 
 debug:
-	$(EMU) -scale 2 -prg xvi2.prg -run -debug
+	$(EMU) -scale 2 -prg $(XVI_EDITOR).prg -run -debug
 
 trace:
-	$(EMU) -scale 2 -prg xvi2.prg -run -trace
+	$(EMU) -scale 2 -prg $(XVI_EDITOR).prg -run -trace
 
 clean:
-	rm -f xvi2.prg xvi2.asm xvi2.vice-mon-list src/*.pp.p8
+	rm -f xvi2.prg xvi2.asm xvi2.vice-mon-list xvi.prg xvi.asm xvi.vice-mon-list src/*.pp.p8

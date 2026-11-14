@@ -89,7 +89,7 @@ command {
     txt.plot(0, view.FOOTER_LINE)
     plat.putc(':')
   CMDINPUT:
-    cmdchar = plat.getkey()
+    cmdchar = plat.command_key()
     if cmdchar == $1b {  ; ESC key, get out of command mode
       txt.plot(0, view.FOOTER_LINE) ; move cursor to the starting position for writing
       main.prints(view.BLANK_ROW)
@@ -116,7 +116,7 @@ command {
         if cmdchar >= 32 and cmdchar <= 126 and cmdlen < len(cmdBuffer)-2 {
           cmdBuffer[cmdlen] = cmdchar
           cmdlen++
-          plat.putc(cmdchar)
+          plat.command_char(cmdchar)
         }
       }
     }
@@ -395,7 +395,7 @@ main {
 
     scratch.text             = &scratch.data00
     @(scratch.text+MaxLength) = 0
-    doctext.init(sys.progend(), plat.TEXT_TOP)
+    doctext.init(plat.text_start(), plat.TEXT_TOP)
     main.MODE = mode.INIT
 
     sys.wait(20)
@@ -410,7 +410,7 @@ main {
 
     repeat {
     NAVCHARLOOP:
-        char = plat.getkey()
+        char = plat.command_key()
         navchar_start()
         if char == $00 continue
     SKIP_NAVCHARLOOP:
@@ -614,8 +614,8 @@ main {
             cursor_left_on_h()
           }
           else -> {
-            ; only accept printable ISO range
-            if char < 32 or char > 126 {
+            ; accept printable characters for this X16 frontend
+            if not plat.printable(char) {
               goto RLOOP2
             }
             flags.UNSAVED = true
@@ -706,8 +706,8 @@ main {
             goto IBACKSPACE
           }
           else -> {
-            ; only accept printable ISO range
-            if char < 32 or char > 126 {
+            ; accept printable characters for this X16 frontend
+            if not plat.printable(char) {
               goto ILOOP
             }
             goto IINSERTCHAR
@@ -1095,7 +1095,7 @@ main {
 
         doctext.fetch(lineNum, tmp)
         strings.rstrip(tmp)
-        prints(tmp)
+        plat.show_text(tmp)
         txt.plot(view.LEFT_MARGIN, r+1)
 
         lineNum++
@@ -1120,7 +1120,8 @@ main {
       txt.plot(0, view.BOTTOM_LINE)
       main.printLineNum(lineNum)
       txt.plot(view.LEFT_MARGIN, view.BOTTOM_LINE)
-      say(scratch.text)
+      plat.show_text(scratch.text)
+      plat.nl()
   }
 
   sub draw_top_line (uword lineNum) {
@@ -1129,7 +1130,7 @@ main {
       }
       doctext.fetch(lineNum, scratch.text)
       txt.plot(view.LEFT_MARGIN, view.TOP_LINE)
-      prints(scratch.text)
+      plat.show_text(scratch.text)
       txt.plot(0, view.TOP_LINE)
       main.printLineNum(lineNum)
   }
@@ -1176,7 +1177,7 @@ main {
   sub get_end_col(ubyte r) -> ubyte {
     ^^Line curr_addr = get_Line_addr(r)
 
-    ; Find last printable ISO byte (32..126) in the line buffer.
+    ; Find the last printable frontend character in the line buffer.
     ; If none, return LEFT_MARGIN.
     ubyte last = 255
     ubyte i
@@ -1185,7 +1186,7 @@ main {
       if ch == 0 {
         break
       }
-      if ch >= 32 and ch <= 126 and ch != $20 {  ; treat space as not “visible”
+      if plat.printable(ch) and ch != $20 {  ; treat space as not “visible”
         last = i
       }
     }
@@ -1395,9 +1396,9 @@ main {
     }
 
     str tmp = " " * 76 ; main.MaxLength
-    void strings.copy(addr.text, tmp)
+    sys.memcopy(addr.text, tmp, main.MaxLength+1)
     strings.rstrip(tmp) ; <- to get rid of straw CR or LF, but is this necessary?
-    prints(tmp)
+    plat.show_text(tmp)
     return strings.length(tmp) ; <- still we can get length, and this can be helpful
   }
 
@@ -1414,8 +1415,8 @@ main {
 
   ; in NAV mode, `r <char>`
   sub replace_char(ubyte tchar) {
-    ; accept only printable ISO
-    if tchar < 32 or tchar > 126 {
+    ; accept printable characters for this X16 frontend
+    if not plat.printable(tchar) {
       return
     }
 
@@ -1451,8 +1452,8 @@ main {
   }
 
   sub insert_char_shift_right(ubyte tchar) {
-    ; accept only printable ISO
-    if tchar < 32 or tchar > 126 {
+    ; accept printable characters for this X16 frontend
+    if not plat.printable(tchar) {
       return
     }
 

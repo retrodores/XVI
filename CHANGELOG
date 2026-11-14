@@ -1,3 +1,14 @@
+2026-11-14 - Restore PETSCII / VTUI XVI alongside XVI2
+
+- Add src/xvi.p8 and a VTUI frontend using the shared XVI2 gap-buffer engine.
+- Keep full documents in an 8 KiB RAM arena instead of the visible screen.
+- Preserve PETSCII graphics/control bytes on disk; normalize line endings to CR.
+- Render document glyphs via the maintained embedded VTUI binary; display control bytes as spaces.
+- Modernize the Prog8 binding wrapper and document the complete binary interface and memory map.
+- Reproducibly patch VTUI charset conversion for high-bit PETSCII/graphics; preserve the archived binary.
+- Build/package both X16 frontends in CI; add native long-document, file-round-trip and VTUI rendering tests.
+- Give each headless X16 test a temporary filesystem.
+
 2026-11-14 - Commander X16 focus
 
 - Remove the C64 port, VICE runners/ROM helper, and C64 TAP wrappers.

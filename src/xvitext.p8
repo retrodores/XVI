@@ -43,6 +43,8 @@ doctext {
     ; use the memory from start up to (not including) top for the text
     sub init(pointer start, pointer top) {
         buffer.eol = $0a
+        if plat.PETSCII
+            buffer.eol = $0d
         buffer.yank_size = YANK_SIZE
         if buffer.PAGED
             buffer.yank_size = $ffff
@@ -319,10 +321,15 @@ doctext {
                 continue
             }
             after_cr = c == $0d
-            if c == $0d
-                c = $0a
-            else if c != $0a and (c < 32 or c > 126)
-                c = $20
+            if plat.PETSCII {
+                if c == $0d or c == $0a
+                    c = buffer.eol
+            } else {
+                if c == $0d
+                    c = $0a
+                else if c != $0a and (c < 32 or c > 126)
+                    c = $20
+            }
             @(dest) = c
             dest++
         }

@@ -51,7 +51,9 @@ sub bail {
 }
 
 sub run_suite {
-    my ($source, $target) = @_;
+    my ($source, $target, $frontend) = @_;
+    $frontend //= 'cx16';
+    die "unsupported X16 frontend: $frontend\n" unless $frontend eq 'cx16' || $frontend eq 'vtui';
     $target //= 'virtual';
     die "unsupported test backend: $target\n" unless $target eq 'virtual' || $target eq 'cx16';
     my $jar = $ENV{JAR} // 'prog8c-14.0-BETA3-all.jar';
@@ -59,7 +61,7 @@ sub run_suite {
     my $dir = tempdir('xvi2-test-XXXXXX', TMPDIR => 1, CLEANUP => 1);
     my @compiler = ($java, '-jar', $jar);
     my @paths = $target ne 'virtual'
-        ? ('-srcdirs', "src/$target", '-srcdirs', "t/support/$target")
+        ? ('-srcdirs', "src/$frontend", '-srcdirs', "t/support/$target")
         : ('-srcdirs', 't/support');
     my ($status, $output) = capture("$dir/compile.log", @compiler,
         '-noopt', '-target', $target, '-srcdirs', 'src',

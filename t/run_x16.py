@@ -5,6 +5,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 
 def main():
     data = pathlib.Path(sys.argv[1]).read_bytes()
@@ -15,12 +16,15 @@ def main():
     entry = int(match.group(1))
     commands = "".join(f"STM {base+i:04X} {v:02X}\n" for i,v in enumerate(data[2:]))
     commands += f"RUN {entry:04X}\n"
+    filesystem = tempfile.TemporaryDirectory(prefix="xvi2-x16-fs-")
     proc = subprocess.run(
         [os.environ["X16EMU"], "-rom", os.environ["X16ROM"],
-         "-testbench", "-echo", "raw", "-sound", "none", "-warp"],
+         "-testbench", "-echo", "raw", "-sound", "none", "-warp",
+         "-fsroot", filesystem.name],
         input=commands, text=True, encoding="latin1", stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, timeout=45,
         env={**os.environ, "SDL_VIDEODRIVER": "dummy", "SDL_AUDIODRIVER": "dummy"})
+    filesystem.cleanup()
     output = proc.stdout.replace("\r\n", "\n").replace("\r", "\n")
     # Protocol acknowledgements are not TAP.
     if "# TAP BEGIN\n" not in output:

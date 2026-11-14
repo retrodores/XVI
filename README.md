@@ -10,7 +10,7 @@ XVI2 is a work in progress. It has modal editing, file loading and saving, line 
 
 See [BUILDING.md](BUILDING.md) for the tested Linux build and basic Windows x16emu launch. The current build uses **Prog8 14.0-BETA3** with optimization disabled.
 
-The **Build** GitHub Actions workflow builds the X16 program on Linux and uploads `XVI2.PRG`. Focused TAP suites run in Prog8 VM and headless x16emu. Full editor UI and disk-I/O testing remain manual.
+The **Build** workflow builds both X16 frontends: XVI2 (ISO/ASCII) and XVI (PETSCII/VTUI). Focused TAP suites run in Prog8 VM and headless x16emu, including native VTUI rendering and PETSCII file-round-trip checks. Full interactive editor UI testing remains manual.
 
 ## Documentation
 
@@ -19,11 +19,12 @@ The **Build** GitHub Actions workflow builds the X16 program on Linux and upload
 - [Manual regression checklist](regression-test.md)
 - [Sample files](samples/)
 - [Change history](CHANGELOG)
-- [Original VTUI/PETSCII XVI and revival assessment](docs/VTUI-XVI.md)
+- [Restored VTUI/PETSCII XVI](docs/VTUI-XVI.md)
+- [Maintained VTUI binary interface](docs/VTUI-INTERFACE.md)
 
 The quick-help/regression files contain older fixed-width wording: the current X16 editor displays a 76-column window and pans over longer lines.
 
-Historical code and binaries live in [attic/](attic/). The original VTUI-based XVI is preserved there; it is not currently an active build target.
+Historical code and binaries live in [attic/](attic/). The original screen-based XVI is preserved there; `src/xvi.p8` restores its PETSCII/VTUI frontend with a RAM gap buffer. Build it with `make vtui`.
 
 For more links: https://x16files.com/hub/editors.html#pkg-XVI2
 

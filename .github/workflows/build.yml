@@ -12,7 +12,11 @@ permissions:
 
 jobs:
   build:
-    name: Build Commander X16
+    name: Build X16 ${{ matrix.editor }}
+    strategy:
+      fail-fast: false
+      matrix:
+        editor: [xvi2, xvi]
     runs-on: ubuntu-24.04
     env:
       PROG8_VERSION: 14.0-BETA3
@@ -31,17 +35,27 @@ jobs:
           mkdir -p build/tools
           curl -fL --retry 3 "https://github.com/irmen/prog8/releases/download/v${PROG8_VERSION}/prog8c-${PROG8_VERSION}-all.jar" -o "build/tools/prog8c-${PROG8_VERSION}-all.jar"
           echo "7117cabdb1d3ecf11d4f38aa7e2cea570056a3eb2c3b3f4e8593838b1b4115c0  build/tools/prog8c-${PROG8_VERSION}-all.jar" | sha256sum -c -
+      - name: Verify maintained VTUI binary
+        if: matrix.editor == 'xvi'
+        run: |
+          cp src/vtui/VTUI.BIN build/tools/VTUI.expected.bin
+          python3 tools/rebuild_vtui.py
+          cmp src/vtui/VTUI.BIN build/tools/VTUI.expected.bin
       - name: Build program
-        run: make build OPT=-noopt JAR="$PWD/build/tools/prog8c-${PROG8_VERSION}-all.jar"
+        run: make build XVI_EDITOR="${{ matrix.editor }}" OPT=-noopt JAR="$PWD/build/tools/prog8c-${PROG8_VERSION}-all.jar"
       - name: Package PRG
         run: |
-          test -s xvi2.prg
+          test -s "${{ matrix.editor }}.prg"
           mkdir -p build/cx16
-          cp xvi2.prg build/cx16/XVI2.PRG
+          if [ "${{ matrix.editor }}" = xvi ]; then
+            cp xvi.prg build/cx16/XVI.PRG
+          else
+            cp xvi2.prg build/cx16/XVI2.PRG
+          fi
       - uses: actions/upload-artifact@v4
         with:
-          name: xvi2-cx16-prog8-14.0-BETA3
-          path: build/cx16/XVI2.PRG
+          name: ${{ matrix.editor }}-cx16-prog8-14.0-BETA3
+          path: build/cx16/*.PRG
           if-no-files-found: error
 
   draft-release:
@@ -54,12 +68,13 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: xvi2-cx16-prog8-14.0-BETA3
+          pattern: xvi*-cx16-prog8-14.0-BETA3
           path: artifacts
       - name: Prepare release files
         run: |
           mkdir release
-          cp artifacts/XVI2.PRG release/XVI2-X16.PRG
+          cp artifacts/xvi2-cx16-prog8-14.0-BETA3/XVI2.PRG release/XVI2-X16.PRG
+          cp artifacts/xvi-cx16-prog8-14.0-BETA3/XVI.PRG release/XVI-VTUI-X16.PRG
           cd release
           sha256sum *.PRG > SHA256SUMS.txt
       - name: Create draft
@@ -71,9 +86,9 @@ jobs:
           cat > notes.md <<'NOTES'
           XVI2 development build for Commander X16.
 
-          Assets: XVI2-X16.PRG and SHA-256 checksums.
+          Assets: XVI2-X16.PRG (ISO/ASCII), XVI-VTUI-X16.PRG (PETSCII/VTUI), and SHA-256 checksums.
           Built on Linux with Prog8 14.0-BETA3 and 64tass, using -noopt.
-          The X16 target compiles and assembles. Buffer and document suites pass in Prog8 VM and headless x16emu. Interactive editor testing remains manual.
+          Both editors target X16. Buffer/document suites execute in Prog8 VM and headless x16emu; PETSCII/VTUI has native document, file-round-trip and rendering checks. Interactive editor testing remains manual.
           NOTES
           gh release create "$RELEASE_TAG" release/* --verify-tag --draft --prerelease --title "XVI2 development build ($RELEASE_TAG)" --notes-file notes.md
 
@@ -116,7 +131,7 @@ jobs:
             export X16EMU="$PWD/build/tools/x16emu/x16emu"
             export X16ROM="$PWD/build/tools/x16emu/rom.bin"
             test -x "$X16EMU" && test -s "$X16ROM"
-            prove -v t/03-*.t t/04-*.t
+            prove -v t/03-*.t t/04-*.t t/05-*.t
           else
             prove -v t/01-*.t t/02-*.t
           fi

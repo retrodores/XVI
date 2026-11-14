@@ -8,6 +8,7 @@
 %encoding iso
 
 plat {
+    const bool PETSCII = false
     ; the screen
     const ubyte COLS          = 80
     const ubyte LEFT_MARGIN   = 4
@@ -24,6 +25,8 @@ plat {
     ; the text goes from the end of the program up to here
     const uword TEXT_TOP      = $9f00
 
+    sub text_start() -> uword { return sys.progend() }
+
     sub init() {
         txt.iso()
     }
@@ -39,6 +42,11 @@ plat {
     sub getkey() -> ubyte {
         return cbm.GETIN2()
     }
+
+    sub command_char(ubyte c) { putc(c) }
+    sub command_key() -> ubyte { return getkey() }
+    sub printable(ubyte c) -> bool { return c >= 32 and c <= 126 }
+    sub show_text(str text) { print(text) }
 
     sub print(str x) {
         cbm.CHROUT($80)
