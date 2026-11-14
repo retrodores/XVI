@@ -1,6 +1,5 @@
-; The text of xvi2's document as numbered lines, kept in the text store (see
-; docs/TEXT-STORE.md).  This is the part of xvi2 that doesn't depend on the
-; target: no screen, no keys.  The block is called doctext.
+; XVI2 document lines in the gap store (see buffer.p8 and gapbuffer.p8).
+; This layer does not draw the X16 screen or handle keys. The block is doctext.
 ;
 ; xvi2 sees a line through a window of WIDTH columns, from first_col: fetch()
 ; fills a copy of them, padded with spaces, and commit() puts it back.  The
@@ -347,6 +346,6 @@ doctext {
         if not diskio.f_write(&buffer.eol, 1)
             ok = false
         diskio.f_close_w()
-        return ok and plat.write_ok()
+        return ok
     }
 }

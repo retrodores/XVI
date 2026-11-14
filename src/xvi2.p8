@@ -113,7 +113,7 @@ command {
         }
       }
       else -> {
-        if cmdchar >= 32 and cmdchar <= 126 and cmdlen < len(cmdBuffer)-2 and cmdlen < plat.COLS-2 {
+        if cmdchar >= 32 and cmdchar <= 126 and cmdlen < len(cmdBuffer)-2 {
           cmdBuffer[cmdlen] = cmdchar
           cmdlen++
           plat.putc(cmdchar)
@@ -1057,9 +1057,6 @@ main {
   }
 
   sub printLineNum (uword number) {
-    if not plat.LINE_NUMBERS {
-      return
-    }
     ubyte c = view.c()
     txt.plot(0, view.r())
     plat.color($f)

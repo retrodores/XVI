@@ -1,9 +1,10 @@
-# Building XVI2
+# Building XVI2 for Commander X16
 
-## Commander X16 (tested build)
+XVI2 targets Commander X16. For a Prog8 vi clone focused on cross-platform use, see [p8vi](https://github.com/retrodores/p8vi).
 
-These instructions build the current source on Linux for the Commander X16.
-They use the released Prog8 **14.0-BETA3** compiler and 64tass, with Java 21.
+## Tested Linux build
+
+Use the released **Prog8 14.0-BETA3** compiler, Java 21, and 64tass.
 
 On Ubuntu 24.04:
 
@@ -11,122 +12,57 @@ On Ubuntu 24.04:
 sudo apt-get update
 sudo apt-get install -y openjdk-21-jdk-headless 64tass make curl
 mkdir -p build/tools
-curl -fL --retry 3 \
-  https://github.com/irmen/prog8/releases/download/v14.0-BETA3/prog8c-14.0-BETA3-all.jar \
-  -o build/tools/prog8c-14.0-BETA3-all.jar
+curl -fL --retry 3 https://github.com/irmen/prog8/releases/download/v14.0-BETA3/prog8c-14.0-BETA3-all.jar -o build/tools/prog8c-14.0-BETA3-all.jar
 echo '7117cabdb1d3ecf11d4f38aa7e2cea570056a3eb2c3b3f4e8593838b1b4115c0  build/tools/prog8c-14.0-BETA3-all.jar' | sha256sum -c -
 make build JAR="$PWD/build/tools/prog8c-14.0-BETA3-all.jar"
 ```
 
-The output is `xvi2.prg` in the repository root. Both `src` and
-`src/cx16` must be on the module search path; the Makefile supplies them.
+Output is `xvi2.prg` in the repository root. Make supplies `src` and `src/cx16` module paths and always selects `-target cx16`. A former `TARGET=c64` override now fails with a p8vi referral rather than producing a mislabeled X16 program.
 
-If the compiler is already installed elsewhere:
+With an already installed compiler:
 
 ```sh
 make build JAR=/opt/prog8/14.0-BETA3/prog8c-14.0-BETA3-all.jar
 ```
 
-### Why optimization is disabled
+### Optimization
 
-The Makefile defaults to `OPT=-noopt`. With optimization enabled, BETA3
-reports "can only take negative of a signed number type" for the unsigned
-subtraction expression in `src/gapbuffer.p8`'s `log_change` routine.
-The unmodified source compiles and assembles with `-noopt`.
-Existing compiler warnings remain; a successful build does not establish
-that the editor works correctly at runtime.
+Make defaults to `OPT=-noopt`. BETA3's optimizer reports “can only take negative of a signed number type” for unsigned subtraction in `gapbuffer.p8`'s `log_change`. This is a compiler/build issue independent of the removed C64 port.
 
-To experiment with optimization explicitly, use `make build OPT=`.
+To investigate optimization deliberately, use `make build OPT=`. Existing compiler warnings remain; compilation alone does not establish correct interactive behavior.
 
-### Run on Windows with x16emu
+## Windows x16emu
 
-Download the workflow's `xvi2-cx16-prog8-14.0-BETA3` artifact for the X16 target and extract
-`XVI2.PRG`, or copy your locally built `xvi2.prg` to Windows.
-From the directory containing your installed x16emu and its matching ROM:
+Download the `xvi2-cx16-prog8-14.0-BETA3` workflow artifact and extract `XVI2.PRG`, or copy a locally built `xvi2.prg`.
+
+From your installed x16emu directory, with its matching ROM:
 
 ```powershell
 .\x16emu.exe -prg "C:\path\to\XVI2.PRG" -run
 ```
 
-Press `i` to begin inserting text; Escape returns to navigation mode.
-See [readme.txt](readme.txt) for commands and
-[regression-test.md](regression-test.md) for manual testing.
-CI also executes focused buffer/document tests headlessly; interactive editor
-regression testing is still separate.
+Press `i` to insert text; Escape returns to navigation. Use the wiki for current commands.
 
-## CI
+Make also provides `run`, `br` (build/run), `debug`, `trace`, and `clean`. Set `EMU` for your emulator executable.
 
-[build.yml](.github/workflows/build.yml) uses Ubuntu 24.04, Java 21,
-64tass, and the checksum-verified BETA3 release JAR. Its matrix invokes the same
-`make build` target for `cx16` and `c64`, packaging each result as `XVI2.PRG`
-in a separate target-named artifact.
-It runs on pushes, pull requests, and manual dispatch.
+## CI and draft releases
 
-## Other platforms
+The workflow builds one X16 artifact on Ubuntu 24.04 using Java 21, 64tass and the checksum-verified BETA3 JAR. It runs on master pushes, pull requests, manual dispatch and `draft-*` tags.
 
-Platform-specific modules live in `src/<target>/`; shared editor and
-buffer code lives directly under `src/`. The Makefile selects modules
-using `TARGET`.
+A pushed `draft-*` tag creates a draft prerelease after the build and both test backends pass. Assets are `XVI2-X16.PRG` and `SHA256SUMS.txt`. No C64 binary is built or packaged.
 
-A C64 port is present in `src/c64/`. Its Linux build has also been verified with:
-
-```sh
-make build TARGET=c64 JAR="$PWD/build/tools/prog8c-14.0-BETA3-all.jar"
-```
-
-CI builds both targets independently. The C64 artifact is named
-`xvi2-c64-prog8-14.0-BETA3`. The shared test programs also execute under headless X16 emulation;
-C64 buffer/document tests also execute under headless VICE;
-full editor UI behavior is not covered.
-Both targets currently write `xvi2.prg`; copy the output aside before
-building another target. Add target-specific instructions and CI coverage
-here as more platforms are validated.
-
-## Automated tests (TAP / prove)
+## Automated tests
 
 From the repository root:
 
 ```sh
+export X16EMU=/absolute/path/x16emu
+export X16ROM=/absolute/path/rom.bin
 JAR=/absolute/path/prog8c-14.0-BETA3-all.jar prove -v t/*.t
 ```
 
-The two VM wrappers run without an emulator. To also execute the same suites
-as real 65C02 programs, set `X16EMU` to the absolute x16emu r49 executable
-and `X16ROM` to its matching ROM. Install the SDL2 runtime and Python 3 as well
-as Java, Perl/prove and 64tass. X16 wrappers skip locally if these variables
-are unset; all three backends are explicitly required in CI.
+Use x16emu r49 and its matching ROM. Install Java 21, 64tass, Perl/prove, Python 3 and SDL2 runtime. Without the emulator variables, the two X16 wrappers skip locally; VM wrappers still run. CI explicitly requires VM and X16 execution.
 
-The test programs import the existing production modules without editing them.
-The VM uses the buffer's portable scan branches; headless X16 tests use the
-production platform and assembly helpers through x16emu's `-testbench` mode.
-Assertions execute in P8 and emit TAP, which Perl's `prove` evaluates. Compilation,
-VM/emulator failures, missing plans and timeouts fail the run.
+The suites import unchanged production buffer/document modules. VM tests use existing portable scan branches through test-only adapters; native X16 tests use the X16 helpers and testbench protocol. Assertions execute in Prog8 and emit TAP to prove.
 
-Coverage includes gap movement and capacity boundaries, page-boundary scans,
-marks, undo/redo, document line operations, yank/paste, horizontal windows, and
-line-ending normalization. It does not yet cover editor UI, disk load/save,
-or a measured percentage of source lines. See `t/AGENTS.md` for
-maintenance guidance. Draft release jobs now wait for all three test backends too.
-
-### C64 execution in headless VICE
-
-Ubuntu 24.04's VICE 3.7.1 is the tested emulator. Its `-console` mode needs no
-window server. Install `vice` (from Ubuntu multiverse), then run:
-
-```sh
-python3 t/fetch_vice_roms.py build/tools/vice-roms
-export VICE="$(command -v x64sc)"
-export VICE_ROMS="$PWD/build/tools/vice-roms"
-JAR=/absolute/path/prog8c-14.0-BETA3-all.jar prove -v t/05-*.t t/06-*.t
-```
-
-The helper downloads the three required ROMs from a fixed revision of VICE's
-source mirror and checks their SHA-256 digests. They stay in ignored `build/`.
-The tests compile the unchanged production C64 modules with BETA3 and `-noopt`.
-The test-only TAP adapter writes ASCII results into a fresh temporary filesystem,
-closes the file, and signals completion using VICE's debug cartridge at `$d7ff`.
-The runner requires that completion signal and a TAP plan; cycle and wall-clock
-limits prevent hangs from passing. `prove` evaluates the actual C64 assertions.
-
-Set both emulator variable pairs to execute all six wrappers / three backends
-with `prove -v t/*.t`. CI requires every backend before a draft release is made.
+Coverage includes gap movement/capacity, page-boundary scans, marks, undo/redo APIs, line operations, yank/paste, horizontal windows and line-ending normalization. Editor UI and disk load/save remain outside these suites. Compilation errors, crashes, missing plans/completion and timeouts fail. See `t/AGENTS.md`.

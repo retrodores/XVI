@@ -2,7 +2,9 @@ JAVA ?= java
 PROG8_VERSION ?= 14.0-BETA3
 JAR ?= prog8c-$(PROG8_VERSION)-all.jar
 PROG8C = $(JAVA) -jar "$(JAR)"
-TARGET ?= cx16
+ifneq ($(filter-out cx16,$(TARGET)),)
+$(error XVI2 targets Commander X16 only; use retrodores/p8vi for cross-platform editing)
+endif
 EMU ?= x16emu
 # BETA3 rejects unsigned subtraction in gapbuffer.p8 with optimization enabled.
 OPT ?= -noopt
@@ -14,7 +16,7 @@ XVI2_SRC := src/xvi2.p8
 all: build
 
 build:
-	$(PROG8C) $(OPT) -srcdirs src -srcdirs src/$(TARGET) -target $(TARGET) $(XVI2_SRC)
+	$(PROG8C) $(OPT) -srcdirs src -srcdirs src/cx16 -target cx16 $(XVI2_SRC)
 
 run:
 	$(EMU) -scale 2 -prg xvi2.prg -run

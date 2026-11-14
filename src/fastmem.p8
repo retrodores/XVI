@@ -1,7 +1,6 @@
-; fastmem: byte scans and copies for the text stores, in 6502 assembler
-; (the plain 6502: also the X16's 65C02).  A target imports it from its
-; fastmem_platform.p8; the virtual target has Prog8 versions of the same
-; routines (src/virtual/fastmem_platform.p8).
+; fastmem: native byte scans and copies for the Commander X16 text store.
+; src/cx16/fastmem_platform.p8 selects these helpers. VM tests select the
+; portable store paths through t/support/fastmem_platform.p8.
 ;
 ; Each loop is "lda (ptr),y" over 256 bytes at a time: about 15 cycles a
 ; byte, against about 75 for the Prog8 loops they replace.

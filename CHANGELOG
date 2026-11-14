@@ -1,3 +1,12 @@
+2026-11-14 - Commander X16 focus
+
+- Remove the C64 port, VICE runners/ROM helper, and C64 TAP wrappers.
+- Build, test and package only the X16 editor; retain focused VM and native X16 TAP suites.
+- Remove the C64-only line-number switch, narrow-screen command bound and disk write-status callback.
+- Direct cross-platform vi users to retrodores/p8vi.
+- Document the preserved original VTUI/PETSCII XVI and the work needed to restore it with a gap buffer.
+- Earlier entries below record historical work and no longer describe the supported target matrix.
+
 2026-11-01 - Headless C64 TAP tests
 
 - Execute the shared buffer/document suites as C64 binaries in VICE console mode.

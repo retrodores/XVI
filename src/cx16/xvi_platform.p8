@@ -1,6 +1,5 @@
-; xvi2 on the Commander X16: what depends on the target.  Each target has
-; this block "plat" (and the block "cursor") with the same names; the
-; virtual target only has the parts doctext uses, for its tests.
+; Commander X16 screen, keyboard, cursor, and file helpers for XVI2.
+; Kept separate from document code for focused headless tests.
 
 %import conv
 %import diskio
@@ -18,7 +17,6 @@ plat {
     const ubyte BOTTOM_LINE   = 57  ; row of the last line of the view port
     const ubyte FOOTER_LINE   = 59
     const ubyte ROW_LEN       = 79  ; what can be written on a row from column 0
-    const bool LINE_NUMBERS   = true
 
     ; the columns of text on screen
     const ubyte TEXT_WIDTH    = 76
@@ -136,10 +134,6 @@ plat {
         return diskio.f_open_w(name)
     }
 
-    ; after diskio.f_close_w(): did the writing work?
-    sub write_ok() -> bool {
-        return true
-    }
 }
 
 cursor {

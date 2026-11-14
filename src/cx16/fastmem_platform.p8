@@ -1,8 +1,8 @@
-; the text stores' byte scans and copies: in 6502 assembler (src/fastmem.p8)
+; Commander X16 native text-store byte scans and copies.
 %import fastmem
 
 fastmem {
 %option merge
-    ; the stores use these routines (see fastmem.FAST in vic20)
+    ; Production uses native helpers; VM tests select portable scans.
     const bool FAST = true
 }

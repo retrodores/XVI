@@ -1,5 +1,4 @@
-; The gap buffer: a text store in one block of memory (see buffer.p8 for
-; what a text store is and does).  The VIC-20 uses it.
+; The gap buffer: XVI2's contiguous text store (see buffer.p8 for its API).
 ;
 ; Memory layout (ram addresses):
 ;

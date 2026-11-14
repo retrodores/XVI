@@ -53,6 +53,7 @@ sub bail {
 sub run_suite {
     my ($source, $target) = @_;
     $target //= 'virtual';
+    die "unsupported test backend: $target\n" unless $target eq 'virtual' || $target eq 'cx16';
     my $jar = $ENV{JAR} // 'prog8c-14.0-BETA3-all.jar';
     my $java = $ENV{JAVA} // 'java';
     my $dir = tempdir('xvi2-test-XXXXXX', TMPDIR => 1, CLEANUP => 1);
@@ -71,12 +72,10 @@ sub run_suite {
     bail('compiler did not produce test output', $output) unless -s $ir;
     my @run = $target eq 'cx16'
         ? ('python3', 't/run_x16.py', $ir)
-        : $target eq 'c64' ? ('python3', 't/run_vice.py', $ir)
         : (@compiler, '-vm', $ir);
     ($status, $output) = capture("$dir/run.log", @run);
     my $complete = $target eq 'cx16'
         ? $output =~ /^# X16 test program completed$/m
-        : $target eq 'c64' ? $output =~ /^# C64 test program completed$/m
         : $output =~ /^Program exit! Statuscode=0\b/m;
     bail('test execution failed or timed out', $output) if $status || !$complete;
     # Keep TAP from the P8 program verbatim; make compiler/VM chatter diagnostic.
