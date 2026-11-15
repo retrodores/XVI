@@ -22,7 +22,7 @@ sub capture {
     my $status;
     my $finished = eval {
         local $SIG{ALRM} = sub { die "timeout\n" };
-        alarm 60;
+        alarm 120;
         waitpid($pid, 0);
         $status = $?;
         alarm 0;
@@ -61,7 +61,7 @@ sub run_suite {
     my $dir = tempdir('xvi2-test-XXXXXX', TMPDIR => 1, CLEANUP => 1);
     my @compiler = ($java, '-jar', $jar);
     my @paths = $target ne 'virtual'
-        ? ('-srcdirs', "src/$frontend", '-srcdirs', "t/support/$target")
+        ? ('-srcdirs', "src/$frontend", '-srcdirs', 'src/cx16', '-srcdirs', "t/support/$target")
         : ('-srcdirs', 't/support');
     my ($status, $output) = capture("$dir/compile.log", @compiler,
         '-noopt', '-target', $target, '-srcdirs', 'src',

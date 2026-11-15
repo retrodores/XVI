@@ -8,6 +8,9 @@ import sys
 import tempfile
 
 def main():
+    ram_kb = os.environ.get("X16_RAM_KB", "512")
+    if ram_kb not in {"512", "2048"}:
+        raise ValueError("X16_RAM_KB must be 512 or 2048")
     data = pathlib.Path(sys.argv[1]).read_bytes()
     base = int.from_bytes(data[:2], "little")
     match = re.search(rb"\x9e\s*(\d+)", data[2:40])
@@ -20,9 +23,9 @@ def main():
     proc = subprocess.run(
         [os.environ["X16EMU"], "-rom", os.environ["X16ROM"],
          "-testbench", "-echo", "raw", "-sound", "none", "-warp",
-         "-fsroot", filesystem.name],
+         "-fsroot", filesystem.name, "-ram", os.environ.get("X16_RAM_KB", "512")],
         input=commands, text=True, encoding="latin1", stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT, timeout=45,
+        stderr=subprocess.STDOUT, timeout=100,
         env={**os.environ, "SDL_VIDEODRIVER": "dummy", "SDL_AUDIODRIVER": "dummy"})
     filesystem.cleanup()
     output = proc.stdout.replace("\r\n", "\n").replace("\r", "\n")

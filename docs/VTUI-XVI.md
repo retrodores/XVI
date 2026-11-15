@@ -24,14 +24,15 @@ embedded in the PRG, so no external VTUI install is needed.
 
 ## Full document in RAM
 
-VTUI no longer serves as authoritative text storage. An 8 KiB contiguous gap
-buffer at $6800..$87ff stores the document; the display is a 56-row viewport,
-with horizontal panning for long lines. Capacity is bytes, not screen rows:
-thousands of short lines can fit, while a few long lines consume the same space.
-The native test saves and reloads 202 lines, including off-screen yank/paste.
+VTUI no longer serves as authoritative text storage. The shared banked gap
+buffer stores the document independently of the 56-row viewport, with
+horizontal panning for long lines. Both frontends detect installed RAM and
+reserve banks 0–3: 480 KiB of text capacity on a stock 512 KiB machine, or
+2,016 KiB on a fully populated 2 MiB machine. Logical offsets and line numbers
+are 32-bit. See [banked RAM](Banked-RAM.md) for exact limits and tests.
 
-The arena is a finite 8 KiB, not the X16's entire banked RAM. Expanding it to
-banked storage is future work. VTUI occupies $8800..$8c14 and BSS follows it.
+VTUI occupies $8800..$8c14 and BSS follows it. The former fixed $6800..$87ff
+text arena is gone; document bytes live in banks 4 through the detected last bank.
 
 ## PETSCII behavior
 

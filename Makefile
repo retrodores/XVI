@@ -6,14 +6,14 @@ ifneq ($(filter-out cx16,$(TARGET)),)
 $(error XVI2 targets Commander X16 only; use retrodores/p8vi for cross-platform editing)
 endif
 EMU ?= x16emu
-# BETA3 rejects unsigned subtraction in gapbuffer.p8 with optimization enabled.
+# Keep the pinned, tested BETA3 build path; optimization remains opt-in.
 OPT ?= -noopt
 XVI_EDITOR ?= xvi2
 ifneq ($(filter-out xvi2 xvi,$(XVI_EDITOR)),)
 $(error XVI_EDITOR must be xvi2 or xvi)
 endif
 ifeq ($(XVI_EDITOR),xvi)
-SRC_DIRS := -srcdirs src/vtui -srcdirs src
+SRC_DIRS := -srcdirs src/vtui -srcdirs src/cx16 -srcdirs src
 else
 SRC_DIRS := -srcdirs src -srcdirs src/cx16
 endif

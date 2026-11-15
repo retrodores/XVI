@@ -65,7 +65,7 @@ view {
   const ubyte FOOTER_LINE     = plat.FOOTER_LINE
   str         BLANK_ROW       = " " * plat.ROW_LEN    ; a whole row, from column 0
   str         BLANK_TEXT      = " " * plat.TEXT_WIDTH ; the text part of a row
-  uword       CURR_TOP_LINE   = 1  ; tracks which actual doc line is at TOP_LINE
+  long        CURR_TOP_LINE   = 1  ; tracks which actual doc line is at TOP_LINE
 
   sub r() -> ubyte {
     return txt.get_row()
@@ -383,7 +383,7 @@ main {
   ubyte last_char
   ubyte col
   ubyte row
-  uword numbers
+  long numbers
 
   sub start () {
     plat.init()
@@ -516,8 +516,9 @@ main {
           if numbers == 0 {
             main.do_dd()
           } else {
-            repeat numbers {
+            while numbers > 0 {
               main.do_dd()
+              numbers--
             }
             numbers = 0
           }
@@ -781,10 +782,10 @@ main {
   sub key_mode_command() {
   }
 
-  sub get_line_num(ubyte r) -> uword {
+  sub get_line_num(ubyte r) -> long {
     const uword top = mkword(00,view.TOP_LINE)
     uword trow       = mkword(00,r)
-    uword curr_line = view.CURR_TOP_LINE + trow - top
+    long curr_line = view.CURR_TOP_LINE + trow - top
     return curr_line
   }
 
@@ -915,7 +916,7 @@ main {
 
     cursor.hide()
 
-    uword curr_line = main.get_line_num(r) ; next_line is +1
+    long curr_line = main.get_line_num(r) ; next_line is +1
 
     if not doctext.insert_empty(curr_line + 1) {
       warn("Out of memory!")
@@ -942,7 +943,9 @@ main {
 
       ; handle lines as they shift down if adding lines mid screen on a
       ; short document
-      if main.lineCount <= view.HEIGHT and r != (main.lineCount+view.TOP_LINE) {
+      long last_row = main.lineCount + view.TOP_LINE
+      long this_row = r
+      if main.lineCount <= view.HEIGHT and this_row != last_row {
          ; prog8 will short circut here if the first condition is false, so it
          ; avoids lineCount (uword) overflowing "as ubyte"
          txt.plot(view.LEFT_MARGIN, (main.lineCount as ubyte)+view.TOP_LINE-1)
@@ -1018,7 +1021,7 @@ main {
     info("cut")
 
     ; compute whether we just deleted the last document line
-    uword deleted_line = main.get_line_num(r)
+    long deleted_line = main.get_line_num(r)
 
     if not doctext.yank(deleted_line) {
       warn("Line too long to yank!")
@@ -1042,27 +1045,30 @@ main {
     main.update_tracker()
   }
 
-  sub incr_top_line(uword value) -> uword {
+  sub incr_top_line(long value) -> long {
     if  view.CURR_TOP_LINE + value <= main.lineCount {
       view.CURR_TOP_LINE += value
     }
     return view.CURR_TOP_LINE     ; stops ++'ing with the last HEIGHT lines in the document
   }
 
-  sub decr_top_line(uword value) -> uword {
+  sub decr_top_line(long value) -> long {
     if  view.CURR_TOP_LINE - value >= 1 {
       view.CURR_TOP_LINE -= value
     }
     return view.CURR_TOP_LINE     ; returns 1 at the minimum
   }
 
-  sub printLineNum (uword number) {
+  sub printLineNum (long number) {
     ubyte c = view.c()
     txt.plot(0, view.r())
     plat.color($f)
     prints("    ")
     txt.plot(0, view.r())
-    printW(number)
+    if number > 9999
+      prints("####")
+    else
+      printW(number)
     plat.color($1)
     txt.plot(c, view.r())
   }
@@ -1072,7 +1078,7 @@ main {
       ubyte r
       txt.plot(view.LEFT_MARGIN, view.TOP_LINE)
       ubyte m,n
-      uword remaining = main.lineCount - view.CURR_TOP_LINE + 1
+      long remaining = main.lineCount - view.CURR_TOP_LINE + 1
       if remaining >= view.HEIGHT {
         m = view.HEIGHT
         n = 0
@@ -1081,7 +1087,7 @@ main {
         m = remaining as ubyte
         n = (view.HEIGHT - remaining) as ubyte
       }
-      uword lineNum = view.CURR_TOP_LINE
+      long lineNum = view.CURR_TOP_LINE
       str tmp = " " *main.MaxLength
       repeat m {
         r = view.r()
@@ -1110,7 +1116,7 @@ main {
       info_noblock("             ")
   }
 
-  sub draw_bottom_line (uword lineNum) {
+  sub draw_bottom_line (long lineNum) {
       if lineNum > main.lineCount {
         return
       }
@@ -1124,7 +1130,7 @@ main {
       plat.nl()
   }
 
-  sub draw_top_line (uword lineNum) {
+  sub draw_top_line (long lineNum) {
       if lineNum < 1 {
         return
       }
@@ -1137,7 +1143,7 @@ main {
 
   sub page_forward() {
       ubyte c = view.c()
-      uword last_page_start = main.lineCount - view.HEIGHT + 1
+      long last_page_start = max(1, main.lineCount - view.HEIGHT + 1)
       if view.CURR_TOP_LINE + view.HEIGHT < last_page_start {
         void incr_top_line(view.HEIGHT)
       }
@@ -1216,7 +1222,7 @@ main {
     }
 
     ; the end of the line must be in the window, but not on its last columns
-    uword length = doctext.length(main.get_line_num(r))
+    long length = doctext.length(main.get_line_num(r))
     if length <= doctext.first_col or length >= doctext.first_col + doctext.WIDTH - 1 {
       if length < doctext.WIDTH - 1 {
         pan_home()
@@ -1260,7 +1266,7 @@ main {
       main.update_tracker()
   }
 
-  sub jump_to_line(uword tline) {
+  sub jump_to_line(long tline) {
     pan_home()
     if tline == 0 or tline > main.lineCount {
       jump_to_end()
@@ -1330,7 +1336,7 @@ main {
     ; j (down) from going past main.lineCount
 
     ; compute last possible top line (clamp so it never underflows)
-    uword lastTop
+    long lastTop
     if main.lineCount > view.HEIGHT {
       lastTop = main.lineCount - view.HEIGHT + 1
     } else {
@@ -1375,7 +1381,7 @@ main {
       ; Only move the cursor down if there is a real document line there.
       ; Map current screen row -> document line number:
       ; docLine = CURR_TOP_LINE + (screenRow - TOP_LINE)
-      uword docLine = view.CURR_TOP_LINE + (curr_line - view.TOP_LINE)
+      long docLine = view.CURR_TOP_LINE + (curr_line - view.TOP_LINE)
 
       if docLine < main.lineCount {
         cursor.place(next_col, next_line)
@@ -1566,7 +1572,7 @@ main {
 
   ; show the text from column first, the cursor stays where it is on screen
   ; (so on another character, the caller moves it)
-  sub pan_to(uword first) {
+  sub pan_to(long first) {
     ubyte c = view.c()
     ubyte r = view.r()
     doctext.first_col = first
@@ -1624,7 +1630,9 @@ main {
     if flags.VERBOSE_STATUS == false {
       if @(doc.filepath+1) != $20 {
         plat.putc($22)
-        prints(doc.filepath)
+        str shown_name = " " * 33
+        strings.slice(doc.filepath, 0, min(strings.length(doc.filepath), 32), shown_name)
+        prints(shown_name)
         plat.putc($22)
         if flags.UNSAVED == true {
           prints(" [modified]")
@@ -1636,11 +1644,11 @@ main {
       else {
         prints("[unsaved buffer]")
       }
-      txt.plot(plat.COLS-13, view.FOOTER_LINE)
-      printW(Y - view.TOP_LINE + 1)
+      txt.plot(plat.COLS-32, view.FOOTER_LINE)
+      printW(main.get_line_num(Y))
       prints(",")
       printW(doctext.first_col + (X - view.LEFT_MARGIN) + 1)
-      txt.plot(plat.COLS-4, view.FOOTER_LINE)
+      prints(" / ")
       printW(main.lineCount)
     }
     else {
@@ -1695,12 +1703,12 @@ main {
     plat.nl()
   }
 
-  sub printw (uword x) {
-    plat.print(conv.str_uw0(x))
+  sub printw (long x) {
+    plat.print(conv.str_l(x))
   }
 
-  sub printW (uword x) {
-    plat.print(conv.str_uw(x))
+  sub printW (long x) {
+    plat.print(conv.str_l(x))
   }
 
   sub info_noblock_LEFT(str message) {

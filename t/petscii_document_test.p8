@@ -17,7 +17,10 @@ main {
         vtui.gotoxy(4, 3)
         tap.ok(lsb(vtui.scan_char()) == $41, "print_str shares full PETSCII conversion with direct plotting")
         doctext.init(plat.text_start(), plat.TEXT_TOP)
-        tap.ok(buffer.free() == 8192, "VTUI text arena has 8 KiB outside binary and BSS")
+        long expected_capacity = buffer.installed_banks
+        expected_capacity -= 4
+        expected_capacity <<= 13
+        tap.ok(buffer.free() == expected_capacity, "VTUI text uses detected banked capacity outside code and BSS")
         tap.ok(buffer.eol == $0d, "PETSCII document uses CR separators")
         raw[0] = $41
         raw[1] = $c1

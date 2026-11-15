@@ -22,6 +22,8 @@ as its own explicit change, rather than silently changing the implementation.
 - `01-*.t`, `02-*.t`: Perl wrappers compiling and executing the P8 programs in Prog8 VM.
 - `03-*.t`, `04-*.t`: same programs compiled for cx16 and run with headless x16emu.
 - `05-vtui-document.t`, `petscii_document_test.p8`: native PETSCII/VTUI document, file round-trip and render/scan checks.
+- `06-banked-document.t`, `07-vtui-banked-document.t`: full-capacity native banked store and disk round-trips for both frontends.
+- `support/bankram.p8`: VM-only bank transport; never claim it executes native bank switching.
 - `lib/Prog8Test.pm`: subprocess deadlines, compile/run failure handling, TAP transport.
 - `support/tap.p8`: small TAP producer for VM. Assertions execute in Prog8.
 - `support/cx16/tap.p8`: TAP producer for X16; exits the emulator after the plan.
@@ -34,7 +36,7 @@ as its own explicit change, rather than silently changing the implementation.
 Native X16 runs import the real `src/cx16/` modules
 and `src/fastmem.p8`.
 VM runs exercise existing portable scan branches. Never describe the VM adapter
-as testing assembly. The original buffer/document suites do not call load/save; the PETSCII/VTUI suite does a native save/reload and screen render/scan. VM adapters do not establish disk-I/O coverage. No suite drives a complete editor session.
+as testing assembly. The original buffer/document suites do not call load/save; the PETSCII/VTUI suite does a native save/reload and screen render/scan, and both banked suites verify full-capacity disk round-trips. VM adapters do not establish disk-I/O coverage. No suite drives a complete editor session.
 
 ## Run from the repository root
 
@@ -44,7 +46,7 @@ JAR=/absolute/path/prog8c-14.0-BETA3-all.jar prove -v t/*.t
 
 Java 21, Perl/prove and Python 3 are needed. Native X16 compilation needs 64tass.
 Set `X16EMU` to the absolute r49 executable and `X16ROM` to its matching
-`rom.bin` to enable the X16 wrappers. Without those variables only the three native X16
+`rom.bin` to enable the X16 wrappers. Without those variables only the five native X16
 wrappers skip; the VM tests still run. CI explicitly runs both backends.
 See `BUILDING.md` and the pinned downloads in `.github/workflows/build.yml`.
 
@@ -61,7 +63,7 @@ See `BUILDING.md` and the pinned downloads in `.github/workflows/build.yml`.
    `\x0a`/`\x0d` for file fixture bytes: `\n` is target-dependent.
    Use `doctext.WIDTH` for the X16 document window.
    Do not tie expectations to labels, register allocation, or instruction counts.
-5. Run the relevant suites, then all five wrappers with X16 emulation configured
+5. Run the relevant suites, then all seven wrappers with X16 emulation configured
    before pushing. Preserve TAP plans; crashes, timeouts and missing plans must fail.
 6. Update this file or the coverage notes only if the suite's scope or invocation
    changes. Report actual assertions/backends executed, skipped coverage and failures.
@@ -71,9 +73,10 @@ this is a project-local TAP helper, not yet a general Prog8 testing framework.
 
 ## PETSCII/VTUI frontend
 
-The new native suite selects src/vtui/ before src. Keep the 8 KiB arena,
-embedded VTUI binary and compiler BSS disjoint. Test file bytes (including
+The new native suite selects src/vtui/ before src. Keep main-RAM code, embedded VTUI binary and compiler BSS disjoint; document bytes use detected banked RAM. Test file bytes (including
 high-bit graphics) independently from screen codes. The runner provides a fresh
 temporary HostFS directory for every emulator execution; no test may overwrite
 user or repository files. Test-only hooks still fail if unexpected screen paths
 are called by suites that do not intend to exercise them.
+
+Native RAM defaults to 512 KiB. Repeat native suites with `X16_RAM_KB=2048`; CI covers both configurations. Banked tests also check more than 65,535 lines.

@@ -14,11 +14,10 @@ binary. The 73-byte charset extension has maintained assembly source; the rest r
   load. Do not call it repeatedly against an already-relocated image.
 - The payload begins with a BRA over its jump table. The initializer establishes
   zero-page pointers in `$02..$06` and relocates the table/binary.
-- The editor reserves `$6800..$87ff` for 8 KiB of document bytes. Code is below
-  that region; compiler-managed BSS is after the binary. These regions must
-  remain disjoint as the program grows.
-- The full PRG embeds the binary and arena. There is no external VTUI file to
-  install beside the editor.
+- Document bytes live in detected banked RAM, outside main-RAM code/BSS.
+  Compiler-managed BSS follows the binary. Code, binary and BSS must remain
+  disjoint as the program grows. See [banked RAM](Banked-RAM.md).
+- The full PRG embeds the binary. There is no external VTUI file to install.
 
 The original stale binding comment said $1000, but its block and entrypoints
 were actually $8800. The active binding documents the real address.
@@ -88,12 +87,12 @@ per-line case-mode changes.
 ## Verification and maintenance
 
 The native suite t/05-vtui-document.t calls the embedded initializer and
-render/scan routines, exercises graphics bytes, checks the 8 KiB arena, and
+render/scan routines, exercises graphics bytes, checks detected banked capacity, and
 saves/reloads a document longer than the viewport. Other rarely used entrypoints
 are retained as documented ABI, not all independently tested.
 
 If modifying the binary: update this hash, payload size/address map if changed,
-the extsub table, and native tests. Preserve program/arena/binary/BSS separation.
+the extsub table, and native tests. Preserve main-RAM code/binary/BSS and banked document separation.
 
 SHA-256 of the active file: `c8e406121ce447b1cc710133a2820b75013334cc111cd4ca7f90471761218de1`.
 

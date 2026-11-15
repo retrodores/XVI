@@ -11,7 +11,7 @@ view {
     const ubyte TOP_LINE = 2
     const ubyte BOTTOM_LINE = 57
     const ubyte LEFT_MARGIN = 4
-    uword CURR_TOP_LINE = 1
+    long CURR_TOP_LINE = 1
     str BLANK_ROW = " " * 80
     sub c() -> ubyte {
         tap.ok(false, "unexpected screen column hook in document test")

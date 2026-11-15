@@ -16,8 +16,8 @@ plat {
     const ubyte FOOTER_LINE = 59
     const ubyte ROW_LEN = 79
     const ubyte TEXT_WIDTH = 76
-    const uword TEXT_TOP = $8800
-    sub text_start() -> uword { return $6800 }
+    const uword TEXT_TOP = 0
+    sub text_start() -> uword { return 0 }
     ubyte foreground = 1
     ubyte background = 6
     str filename = " " * 80
@@ -130,9 +130,9 @@ cursor {
         saved_char = $20
         if r < view.TOP_LINE or r > view.BOTTOM_LINE or c < view.LEFT_MARGIN
             return
-        uword line = view.CURR_TOP_LINE + r - view.TOP_LINE
-        uword position = doctext.pos(line)
-        uword col = doctext.first_col + c - view.LEFT_MARGIN
+        long line = view.CURR_TOP_LINE + r - view.TOP_LINE
+        long position = doctext.pos(line)
+        long col = doctext.first_col + c - view.LEFT_MARGIN
         if position != buffer.NONE and col < doctext.length(line)
             saved_char = buffer.get(position + col)
     }

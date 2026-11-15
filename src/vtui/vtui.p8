@@ -38,12 +38,3 @@ vtui $8800 {
         print_str(text, n, colors, convert)
     }
 }
-
-; Reserved document RAM, disjoint from code/BSS and VTUI at $8800.
-; A fixed block makes assembler overlap visible if regular code grows into it.
-vtui_text $6800 {
-    %option force_output
-    %asm {{
-        .fill $2000, 0
-    }}
-}

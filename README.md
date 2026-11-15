@@ -4,7 +4,7 @@ A vi-style text editor written in Prog8, focused on the **Commander X16**.
 
 For our Prog8 vi clone focused on **cross-platform use**, see [p8vi](https://github.com/retrodores/p8vi). XVI2's active build, renderer and tests target X16; this repository no longer ships a C64 port.
 
-XVI2 is a work in progress. It has modal editing, file loading and saving, line yank/paste, and horizontal panning over long lines. Its text store uses a gap buffer; store-level undo is not yet connected to editor commands.
+XVI2 is a work in progress. It has modal editing, file loading and saving, line yank/paste, and horizontal panning over long lines. Both frontends use a detected banked-RAM gap buffer: 480 KiB of document capacity on a 512 KiB machine, or 2,016 KiB with 2 MiB installed. Positions and line numbers use 32-bit values. Editor undo is not yet connected. See [banked RAM](docs/Banked-RAM.md) for allocation and limits.
 
 ## Build and try it
 
@@ -19,6 +19,7 @@ The **Build** workflow builds both X16 frontends: XVI2 (ISO/ASCII) and XVI (PETS
 - [Manual regression checklist](regression-test.md)
 - [Sample files](samples/)
 - [Change history](CHANGELOG)
+- [Detected banked RAM](docs/Banked-RAM.md)
 - [Restored VTUI/PETSCII XVI](docs/VTUI-XVI.md)
 - [Maintained VTUI binary interface](docs/VTUI-INTERFACE.md)
 

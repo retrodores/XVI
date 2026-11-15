@@ -93,15 +93,22 @@ jobs:
           gh release create "$RELEASE_TAG" release/* --verify-tag --draft --prerelease --title "XVI2 development build ($RELEASE_TAG)" --notes-file notes.md
 
   test:
-    name: TAP tests (${{ matrix.backend }})
+    name: TAP tests (${{ matrix.backend }}, ${{ matrix.ram }} KiB)
     strategy:
       fail-fast: false
       matrix:
-        backend: [virtual, cx16]
+        include:
+          - backend: virtual
+            ram: 512
+          - backend: cx16
+            ram: 512
+          - backend: cx16
+            ram: 2048
     runs-on: ubuntu-24.04
     env:
       PROG8_VERSION: 14.0-BETA3
       BACKEND: ${{ matrix.backend }}
+      X16_RAM_KB: ${{ matrix.ram }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -131,7 +138,7 @@ jobs:
             export X16EMU="$PWD/build/tools/x16emu/x16emu"
             export X16ROM="$PWD/build/tools/x16emu/rom.bin"
             test -x "$X16EMU" && test -s "$X16ROM"
-            prove -v t/03-*.t t/04-*.t t/05-*.t
+            prove -v t/03-*.t t/04-*.t t/05-*.t t/06-*.t t/07-*.t
           else
             prove -v t/01-*.t t/02-*.t
           fi
