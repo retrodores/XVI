@@ -1,33 +1,62 @@
 ; PETSCII/VTUI frontend for the Commander X16. The shared editor uses
 ; ASCII commands/status strings, but document input/output stays PETSCII.
 %encoding iso
+%import x16screen
 %import textio
 %import strings
 %import diskio
 %import vtui
 plat {
     const bool PETSCII = true
+    const bool LINE_NUMBERS = false
+    const ubyte NORMAL_FG = 6
+    const ubyte NORMAL_BG = 12
+    const ubyte SCROLL_COL = 2
+    const ubyte SCROLL_WIDTH = 76
     const ubyte COLS = 80
-    const ubyte LEFT_MARGIN = 4
-    const ubyte RIGHT_MARGIN = 79
+    const ubyte LEFT_MARGIN = 2
+    const ubyte RIGHT_MARGIN = 77
     const ubyte HEIGHT = 56
     const ubyte TOP_LINE = 2
     const ubyte BOTTOM_LINE = 57
-    const ubyte FOOTER_LINE = 59
+    const ubyte FOOTER_LINE = 58
     const ubyte ROW_LEN = 79
     const ubyte TEXT_WIDTH = 76
     const uword TEXT_TOP = 0
     sub text_start() -> uword { return 0 }
-    ubyte foreground = 1
-    ubyte background = 6
+    ubyte foreground = NORMAL_FG
+    ubyte background = NORMAL_BG
     str filename = " " * 80
 
     sub init() {
         txt.iso_off()
         vtui.initialize()
         vtui.screen_set(0)
-        vtui.clr_scr($20, $61)
+        txt.lowercase()
+        clear_canvas()
     }
+    sub normal_colors() { colors(NORMAL_FG, NORMAL_BG) }
+    sub status_colors() { colors(1, 0) }
+    sub clear_canvas() {
+        normal_colors()
+        ; Original XVI palette: green surround, gray/blue interior, black frame.
+        vtui.clr_scr($20, $50)
+        vtui.gotoxy(1, 1)
+        vtui.fill_box($20, 77, 57, $c6)
+        vtui.gotoxy(1, 1)
+        vtui.border(1, 78, 58, $00)
+        txt.plot(LEFT_MARGIN, TOP_LINE)
+    }
+    sub clear_row(ubyte row) {
+        if row >= TOP_LINE and row <= BOTTOM_LINE
+            x16screen.fill(LEFT_MARGIN, row, TEXT_WIDTH, $20, $c6)
+        else if row == FOOTER_LINE
+            x16screen.fill(1, row, 78, $20, $01)
+        else if row == 0
+            x16screen.fill(0, row, COLS, $20, $50)
+    }
+    sub empty_row(ubyte row) { clear_row(row) }
+
     sub quit() {
         txt.clear_screen()
         sys.exit(0)
@@ -59,7 +88,12 @@ plat {
         ubyte screen = $20
         if printable(c)
             screen = vtui.pet2scr(c)
-        vtui.plot_char(screen, (background << 4) | foreground)
+        ubyte colors = (background << 4) | foreground
+        if row == 0 or row == 59 or col == 0 or col == 79
+            colors = $50 | foreground
+        else if row == FOOTER_LINE
+            colors = $01
+        vtui.plot_char(screen, colors)
         if col < COLS-1
             txt.plot(col+1, row)
     }
@@ -88,20 +122,29 @@ plat {
     sub color(ubyte fg) { foreground = fg }
     sub splash_text() {
         txt.plot(LEFT_MARGIN, 8)
-        main.say("XVI - Commander X16 PETSCII / VTUI")
-        main.say("Gap-buffer development build")
-        main.say("i: insert   R: replace   :e file: open   :q: quit")
+        print("XVI - Commander X16 PETSCII / VTUI")
+        txt.plot(LEFT_MARGIN, 9)
+        print("Gap-buffer development build")
+        txt.plot(LEFT_MARGIN, 10)
+        print("i: insert   R: replace   :e file: open   :q: quit")
     }
     sub scroll_view_up() {
-        txt.plot(0, FOOTER_LINE)
-        print(view.BLANK_ROW)
-        txt.plot(0, 1)
-        main.say(view.BLANK_ROW)
-        print(view.BLANK_ROW)
-        txt.scroll_up()
+        ubyte row
+        for row in TOP_LINE to BOTTOM_LINE-1
+            x16screen.copy_row(row+1, row, SCROLL_COL, SCROLL_WIDTH)
+        clear_row(BOTTOM_LINE)
     }
-    sub scroll_view_down() { txt.scrolldown() }
-    sub scroll_down_from(ubyte row) { txt.scrolldown_nlast(row, LEFT_MARGIN) }
+    sub scroll_view_down() { scroll_down_from(TOP_LINE) }
+    sub scroll_down_from(ubyte top) {
+        top = max(TOP_LINE, top)
+        ubyte row = BOTTOM_LINE
+        while row > top {
+            x16screen.copy_row(row-1, row, SCROLL_COL, SCROLL_WIDTH)
+            row--
+        }
+        if top <= BOTTOM_LINE
+            clear_row(top)
+    }
 
     ; Canonical command filenames are ASCII; X16 DOS sees PETSCII.
     sub dos_name(str name) {
@@ -152,7 +195,7 @@ cursor {
         ubyte screen = $20
         if plat.printable(saved_char)
             screen = vtui.pet2scr(saved_char)
-        vtui.plot_char(screen, $16)
+        vtui.plot_char(screen, $61)
         txt.plot(c, r)
     }
 }

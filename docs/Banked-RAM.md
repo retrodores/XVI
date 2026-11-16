@@ -39,8 +39,9 @@ frontend's newline; loading normalizes input and removes that final newline.
 A full-capacity document can therefore round-trip with its extra on-disk final
 newline. Oversized input still reports truncation; keep the original file.
 
-The viewport remains 76 columns by 56 rows. The four-column line gutter shows
-`####` beyond line 9,999; the footer shows the full document line/column/count.
+The viewport remains 76 columns by 56 rows. XVI2's four-column line gutter shows `####` beyond line 9,999; its footer shows
+the full document line/column/count. VTUI retains the original framed viewport
+without a line-number gutter, with position/count in its lower status area.
 Yank storage remains 1,024 bytes, including a line separator; longer lines may
 be edited but cannot be yanked whole. Long-distance moves and scans are linear,
 so larger capacity does not imply instant navigation on a 65C02.

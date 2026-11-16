@@ -82,18 +82,20 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           cat > notes.md <<'NOTES'
-          XVI2 and XVI-VTUI development build for Commander X16.
+          XVI2 and XVI-VTUI display-fix test release for Commander X16.
+
+          Fixes black edge strips and restores the original VTUI green surround, black frame and gray/blue editing area. Scroll operations now preserve chrome and copy complete cells at both viewport edges.
 
           Assets: XVI2-X16.PRG (ISO/ASCII) and XVI-VTUI-X16.PRG (PETSCII/VTUI). Both are standalone PRGs; VTUI is embedded.
 
           Both detect installed banked RAM: 480 KiB of document capacity on 512 KiB machines, or 2,016 KiB with 2 MiB installed. Positions and line numbers use 32-bit values.
           Full-capacity save/reload and 70,145-line document tests pass on both RAM configurations. See the wiki for commands and remaining limitations.
           Built on Linux with Prog8 14.0-BETA3 and 64tass, using -noopt.
-          Both editors target X16. Buffer/document suites execute in Prog8 VM and headless x16emu; PETSCII/VTUI has native document, file-round-trip and rendering checks. Interactive editor testing remains manual.
+          Both editors target X16. Buffer/document suites execute in Prog8 VM and headless x16emu; PETSCII/VTUI has native document, file-round-trip and rendering checks. Native display tests check full-canvas colors, edge clearing and bounded scrolling. Normal-boot splash, file loading and scrolling were also inspected in both editors.
           NOTES
           options=(--prerelease)
           if [[ "$RELEASE_TAG" == draft-* ]]; then options+=(--draft); fi
-          gh release create "$RELEASE_TAG" release/*.PRG --verify-tag "${options[@]}" --title "XVI2 and XVI-VTUI banked-RAM test release" --notes-file notes.md
+          gh release create "$RELEASE_TAG" release/*.PRG --verify-tag "${options[@]}" --title "XVI2 and XVI-VTUI display-fix test release" --notes-file notes.md
 
   test:
     name: TAP tests (${{ matrix.backend }}, ${{ matrix.ram }} KiB)
@@ -141,7 +143,7 @@ jobs:
             export X16EMU="$PWD/build/tools/x16emu/x16emu"
             export X16ROM="$PWD/build/tools/x16emu/rom.bin"
             test -x "$X16EMU" && test -s "$X16ROM"
-            prove -v t/03-*.t t/04-*.t t/05-*.t t/06-*.t t/07-*.t
+            prove -v t/03-*.t t/04-*.t t/05-*.t t/06-*.t t/07-*.t t/08-*.t t/09-*.t
           else
             prove -v t/01-*.t t/02-*.t
           fi

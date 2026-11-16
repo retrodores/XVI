@@ -4,11 +4,17 @@
 %import conv
 %import diskio
 %import strings
+%import x16screen
 %import textio
 %encoding iso
 
 plat {
     const bool PETSCII = false
+    const bool LINE_NUMBERS = true
+    const ubyte NORMAL_FG = 1
+    const ubyte NORMAL_BG = 6
+    const ubyte SCROLL_COL = 0
+    const ubyte SCROLL_WIDTH = 80
     ; the screen
     const ubyte COLS          = 80
     const ubyte LEFT_MARGIN   = 4
@@ -29,6 +35,21 @@ plat {
 
     sub init() {
         txt.iso()
+        normal_colors()
+        clear_canvas()
+    }
+
+    sub normal_colors() { colors(NORMAL_FG, NORMAL_BG) }
+    sub status_colors() { normal_colors() }
+    sub clear_canvas() {
+        normal_colors()
+        txt.fill_screen($20, $61)
+        txt.plot(0, 0)
+    }
+    sub clear_row(ubyte row) { x16screen.fill(0, row, COLS, $20, $61) }
+    sub empty_row(ubyte row) {
+        clear_row(row)
+        x16screen.fill(0, row, 1, $7e, $61)
     }
 
     ; back to BASIC
@@ -102,22 +123,21 @@ plat {
 
     ; the rows of the view one up, the bottom one is free
     sub scroll_view_up() {
-        txt.plot(0, FOOTER_LINE)        ; blank footer line
-        print(view.BLANK_ROW)
-        txt.plot(0, 1)                  ; blank top line
-        main.say(view.BLANK_ROW)
-        print(view.BLANK_ROW)
-        txt.scroll_up()
+        ubyte row
+        for row in TOP_LINE to BOTTOM_LINE-1
+            x16screen.copy_row(row+1, row, SCROLL_COL, SCROLL_WIDTH)
+        clear_row(BOTTOM_LINE)
     }
-
-    ; the rows of the view one down, the top one is free
-    sub scroll_view_down() {
-        txt.scrolldown()
-    }
-
-    ; the rows of the view from row on one down, that row is free
-    sub scroll_down_from(ubyte row) {
-        txt.scrolldown_nlast(row, LEFT_MARGIN)
+    sub scroll_view_down() { scroll_down_from(TOP_LINE) }
+    sub scroll_down_from(ubyte top) {
+        top = max(TOP_LINE, top)
+        ubyte row = BOTTOM_LINE
+        while row > top {
+            x16screen.copy_row(row-1, row, SCROLL_COL, SCROLL_WIDTH)
+            row--
+        }
+        if top <= BOTTOM_LINE
+            clear_row(top)
     }
 
     ; disk

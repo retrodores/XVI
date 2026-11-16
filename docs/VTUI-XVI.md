@@ -34,6 +34,14 @@ are 32-bit. See [banked RAM](Banked-RAM.md) for exact limits and tests.
 VTUI occupies $8800..$8c14 and BSS follows it. The former fixed $6800..$87ff
 text arena is gone; document bytes live in banks 4 through the detected last bank.
 
+## Original display style
+
+The restored frontend keeps the original green surround ($50), black frame
+($00), and gray background with blue text ($c6). Its 76-column viewport starts
+at column 2; it does not use XVI2's four-column line-number gutter. Status
+appears on the black lower frame. The PETSCII lowercase character set keeps
+UI letters readable. Clears and scrolling preserve the frame and surround.
+
 ## PETSCII behavior
 
 - Editing retains printable PETSCII, including high-bit graphics and case bytes.

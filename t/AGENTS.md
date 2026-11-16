@@ -24,6 +24,7 @@ as its own explicit change, rather than silently changing the implementation.
 - `05-vtui-document.t`, `petscii_document_test.p8`: native PETSCII/VTUI document, file round-trip and render/scan checks.
 - `06-banked-document.t`, `07-vtui-banked-document.t`: full-capacity native banked store and disk round-trips for both frontends.
 - `support/bankram.p8`: VM-only bank transport; never claim it executes native bank switching.
+- `08-x16-display.t`, `09-vtui-display.t`, `display_test.p8`: full-canvas palette, edge clearing and bounded scroll regression tests on the real frontend modules.
 - `lib/Prog8Test.pm`: subprocess deadlines, compile/run failure handling, TAP transport.
 - `support/tap.p8`: small TAP producer for VM. Assertions execute in Prog8.
 - `support/cx16/tap.p8`: TAP producer for X16; exits the emulator after the plan.
@@ -63,7 +64,7 @@ See `BUILDING.md` and the pinned downloads in `.github/workflows/build.yml`.
    `\x0a`/`\x0d` for file fixture bytes: `\n` is target-dependent.
    Use `doctext.WIDTH` for the X16 document window.
    Do not tie expectations to labels, register allocation, or instruction counts.
-5. Run the relevant suites, then all seven wrappers with X16 emulation configured
+5. Run the relevant suites, then all nine wrappers with X16 emulation configured
    before pushing. Preserve TAP plans; crashes, timeouts and missing plans must fail.
 6. Update this file or the coverage notes only if the suite's scope or invocation
    changes. Report actual assertions/backends executed, skipped coverage and failures.
@@ -80,3 +81,5 @@ user or repository files. Test-only hooks still fail if unexpected screen paths
 are called by suites that do not intend to exercise them.
 
 Native RAM defaults to 512 KiB. Repeat native suites with `X16_RAM_KB=2048`; CI covers both configurations. Banked tests also check more than 65,535 lines.
+
+Display fixes must also be inspected in a normal-boot editor session: native cell tests do not drive the full command loop. VTUI retains the original $50 green surround, $c6 interior and $00 frame, with a lowercase PETSCII character set.

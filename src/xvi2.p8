@@ -85,14 +85,14 @@ command {
     ubyte cmdlen = 0
     cursor.hide()
     txt.plot(0, view.FOOTER_LINE) ; move cursor to the starting position for writing
-    main.prints(view.BLANK_ROW)
+    plat.clear_row(txt.get_row())
     txt.plot(0, view.FOOTER_LINE)
     plat.putc(':')
   CMDINPUT:
     cmdchar = plat.command_key()
     if cmdchar == $1b {  ; ESC key, get out of command mode
       txt.plot(0, view.FOOTER_LINE) ; move cursor to the starting position for writing
-      main.prints(view.BLANK_ROW)
+      plat.clear_row(txt.get_row())
       txt.plot(0, view.FOOTER_LINE)
       main.update_tracker()
       goto main.start.NAVCHARLOOP  ; start main loop
@@ -225,7 +225,7 @@ command {
       else -> {
         main.warn("Not an editor command!")
         txt.plot(0, view.FOOTER_LINE) ; move cursor to the starting position for writing
-        main.prints(view.BLANK_ROW)
+        plat.clear_row(txt.get_row())
         txt.plot(0, view.FOOTER_LINE)
         main.update_tracker()
         goto main.start.NAVCHARLOOP  ; start main loop
@@ -311,24 +311,25 @@ main {
     if doctext.truncated {
       warn("File too big!")
     }
-    txt.clear_screen()
+    plat.clear_canvas()
     void strings.copy(filepath,doc.filepath)
     return true
   }
 
   sub splash() {
-    txt.clear_screen()
+    plat.clear_canvas()
     txt.plot(0,view.TOP_LINE)
     init_empty_buffer(1)
     plat.splash_text()
   }
 
   sub clear_splash() {
-    txt.clear_screen()
+    plat.clear_canvas()
     txt.plot(0,view.TOP_LINE+1)
     repeat view.HEIGHT-1 {
       txt.plot(0, txt.get_row())
-      say("~    ")
+      plat.empty_row(txt.get_row())
+      plat.nl()
     }
     txt.plot(view.LEFT_MARGIN, view.TOP_LINE)
     cursor.place(view.LEFT_MARGIN, view.TOP_LINE)
@@ -497,7 +498,7 @@ main {
         PROCESS_COMMAND:
         ; clear command line
         txt.plot(0, view.FOOTER_LINE)
-        prints(view.BLANK_ROW)
+        plat.clear_row(txt.get_row())
         main.update_tracker()
         command.process()
 
@@ -901,7 +902,7 @@ main {
       txt.plot(view.LEFT_MARGIN, r)
       prints(view.BLANK_TEXT)
       txt.plot(0, view.BOTTOM_LINE+1)
-      prints(view.BLANK_ROW)
+      plat.clear_row(txt.get_row())
       txt.plot(view.LEFT_MARGIN, r)
       cursor.hide()
       cursor.place(view.LEFT_MARGIN, r)
@@ -939,7 +940,7 @@ main {
       prints(view.BLANK_TEXT)
 
       txt.plot(0,view.BOTTOM_LINE+1)
-      prints(view.BLANK_ROW)
+      plat.clear_row(txt.get_row())
 
       ; handle lines as they shift down if adding lines mid screen on a
       ; short document
@@ -1060,6 +1061,8 @@ main {
   }
 
   sub printLineNum (long number) {
+    if not plat.LINE_NUMBERS
+      return
     ubyte c = view.c()
     txt.plot(0, view.r())
     plat.color($f)
@@ -1069,7 +1072,7 @@ main {
       prints("####")
     else
       printW(number)
-    plat.color($1)
+    plat.normal_colors()
     txt.plot(c, view.r())
   }
 
@@ -1092,7 +1095,7 @@ main {
       repeat m {
         r = view.r()
         txt.plot(0, r)
-        prints(view.BLANK_ROW)
+        plat.clear_row(txt.get_row())
         txt.plot(0, r)
         if main.MODE != mode.INIT {      ; prevent line '1' from showing in splash on start
           main.printLineNum(lineNum)
@@ -1108,9 +1111,9 @@ main {
       }
       repeat n {
         r = view.r()
-        prints(view.BLANK_ROW)
+        plat.clear_row(txt.get_row())
         txt.plot(0,r)
-        prints("~   ")
+        plat.empty_row(r)
         txt.plot(0,r+1)
       }
       info_noblock("             ")
@@ -1122,7 +1125,7 @@ main {
       }
       doctext.fetch(lineNum, scratch.text)
       txt.plot(0, view.BOTTOM_LINE)
-      prints(view.BLANK_ROW)
+      plat.clear_row(txt.get_row())
       txt.plot(0, view.BOTTOM_LINE)
       main.printLineNum(lineNum)
       txt.plot(view.LEFT_MARGIN, view.BOTTOM_LINE)
@@ -1323,7 +1326,7 @@ main {
       txt.plot(view.LEFT_MARGIN, view.TOP_LINE)
       draw_top_line(view.CURR_TOP_LINE)
       txt.plot(0, view.BOTTOM_LINE+1) ; blank footer line
-      prints(view.BLANK_ROW)
+      plat.clear_row(txt.get_row())
       cursor.replace(next_col, curr_line)
     }
     else {
@@ -1621,10 +1624,10 @@ main {
     ; Always draw tracker on the footer line only
     ; Use a known color scheme for footer baseline (optional)
     ; If you don't want this, remove these two lines.
-    plat.colors($1,$6)   ; white on blue (example), match your normal scheme
+    plat.status_colors()
 
     txt.plot(0, view.FOOTER_LINE)
-    prints(view.BLANK_ROW)
+    plat.clear_row(txt.get_row())
     txt.plot(1, view.FOOTER_LINE)
 
     if flags.VERBOSE_STATUS == false {
@@ -1669,7 +1672,7 @@ main {
       if flags.UNSAVED == true {
         plat.colors($6,$1)
         prints("(UNSAVED)")
-        plat.colors($1,$6)
+        plat.normal_colors()
       }
       else if main.MODE > mode.INIT {
         prints("( SAVED )")
@@ -1720,7 +1723,7 @@ main {
     txt.plot(1, 0)
     plat.colors(color1, color2)
     prints(message)
-    plat.colors($1, $6) ; sets text back to default, white on blue
+    plat.normal_colors()
   }
 
   sub info_noblock(str message) {
@@ -1732,7 +1735,7 @@ main {
     txt.plot(right_col(length), 0)
     plat.colors(color1, color2)
     prints(message)
-    plat.colors($1, $6) ; sets text back to default, white on blue
+    plat.normal_colors()
   }
 
   ; the column of a message that ends at the right side of the top row
@@ -1760,9 +1763,9 @@ main {
     prints(message)
     sys.wait(delay)
     txt.plot(right_col(length), 0)
-    plat.colors($1, $6) ; sets text back to default, white on blue
+    plat.normal_colors()
     txt.plot(view.LEFT_MARGIN, 0)
-    prints(view.BLANK_ROW)
+    plat.clear_row(txt.get_row())
     txt.plot(c,r)
   }
 }
