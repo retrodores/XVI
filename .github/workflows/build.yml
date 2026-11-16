@@ -3,7 +3,7 @@ name: Build
 on:
   push:
     branches: [master]
-    tags: ['draft-*']
+    tags: ['draft-*', 'prerelease-*']
   pull_request:
   workflow_dispatch:
 
@@ -59,8 +59,8 @@ jobs:
           if-no-files-found: error
 
   draft-release:
-    name: Create draft release
-    if: startsWith(github.ref, 'refs/tags/draft-')
+    name: Create release
+    if: startsWith(github.ref, 'refs/tags/draft-') || startsWith(github.ref, 'refs/tags/prerelease-')
     needs: [build, test]
     runs-on: ubuntu-24.04
     permissions:
@@ -75,22 +75,25 @@ jobs:
           mkdir release
           cp artifacts/xvi2-cx16-prog8-14.0-BETA3/XVI2.PRG release/XVI2-X16.PRG
           cp artifacts/xvi-cx16-prog8-14.0-BETA3/XVI.PRG release/XVI-VTUI-X16.PRG
-          cd release
-          sha256sum *.PRG > SHA256SUMS.txt
-      - name: Create draft
+      - name: Publish PRGs
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           cat > notes.md <<'NOTES'
-          XVI2 development build for Commander X16.
+          XVI2 and XVI-VTUI development build for Commander X16.
 
-          Assets: XVI2-X16.PRG (ISO/ASCII), XVI-VTUI-X16.PRG (PETSCII/VTUI), and SHA-256 checksums.
+          Assets: XVI2-X16.PRG (ISO/ASCII) and XVI-VTUI-X16.PRG (PETSCII/VTUI). Both are standalone PRGs; VTUI is embedded.
+
+          Both detect installed banked RAM: 480 KiB of document capacity on 512 KiB machines, or 2,016 KiB with 2 MiB installed. Positions and line numbers use 32-bit values.
+          Full-capacity save/reload and 70,145-line document tests pass on both RAM configurations. See the wiki for commands and remaining limitations.
           Built on Linux with Prog8 14.0-BETA3 and 64tass, using -noopt.
           Both editors target X16. Buffer/document suites execute in Prog8 VM and headless x16emu; PETSCII/VTUI has native document, file-round-trip and rendering checks. Interactive editor testing remains manual.
           NOTES
-          gh release create "$RELEASE_TAG" release/* --verify-tag --draft --prerelease --title "XVI2 development build ($RELEASE_TAG)" --notes-file notes.md
+          options=(--prerelease)
+          if [[ "$RELEASE_TAG" == draft-* ]]; then options+=(--draft); fi
+          gh release create "$RELEASE_TAG" release/*.PRG --verify-tag "${options[@]}" --title "XVI2 and XVI-VTUI banked-RAM test release" --notes-file notes.md
 
   test:
     name: TAP tests (${{ matrix.backend }}, ${{ matrix.ram }} KiB)

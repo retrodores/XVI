@@ -58,9 +58,9 @@ Make also provides `run`, `br` (build/run), `debug`, `trace`, and `clean`. Set `
 
 ## CI and draft releases
 
-The workflow builds both X16 frontend artifacts on Ubuntu 24.04 using Java 21, 64tass and the checksum-verified BETA3 JAR. It runs on master pushes, pull requests, manual dispatch and `draft-*` tags.
+The workflow builds both X16 frontend artifacts on Ubuntu 24.04 using Java 21, 64tass and the checksum-verified BETA3 JAR. It runs on master pushes, pull requests, manual dispatch and `draft-*` / `prerelease-*` tags.
 
-A pushed `draft-*` tag creates a draft prerelease after both X16 frontend builds and test backends pass. Assets are `XVI2-X16.PRG`, `XVI-VTUI-X16.PRG`, and `SHA256SUMS.txt`. No C64 binary is built or packaged. Artifacts are `xvi2-cx16-prog8-14.0-BETA3` and `xvi-cx16-prog8-14.0-BETA3`.
+A pushed `draft-*` tag creates a draft prerelease after both X16 frontend builds and test backends pass. A `prerelease-*` tag publishes a public test release after the same checks. Assets are just `XVI2-X16.PRG` and `XVI-VTUI-X16.PRG`. No C64 binary is built or packaged. Artifacts are `xvi2-cx16-prog8-14.0-BETA3` and `xvi-cx16-prog8-14.0-BETA3`.
 
 ## Automated tests
 
