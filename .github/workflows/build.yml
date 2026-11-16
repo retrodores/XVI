@@ -1,149 +1,54 @@
-name: Build
-
+name: Restored editors
 on:
   push:
     branches: [master]
-    tags: ['draft-*', 'prerelease-*']
   pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
-  build:
-    name: Build X16 ${{ matrix.editor }}
+  identity:
+    name: Verify restored source and binary identities
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: prove -v t/*.t
+  package:
+    name: Package ${{ matrix.editor }} restored baseline
+    needs: identity
     strategy:
-      fail-fast: false
       matrix:
         editor: [xvi2, xvi]
     runs-on: ubuntu-24.04
-    env:
-      PROG8_VERSION: 14.0-BETA3
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
+        if: matrix.editor == 'xvi2'
         with:
           distribution: temurin
           java-version: '21'
-      - name: Install assembler
+      - name: Prepare historical XVI2 compiler
+        if: matrix.editor == 'xvi2'
         run: |
           sudo apt-get update
           sudo apt-get install -y 64tass
-      - name: Download and verify Prog8
-        run: |
-          mkdir -p build/tools
-          curl -fL --retry 3 "https://github.com/irmen/prog8/releases/download/v${PROG8_VERSION}/prog8c-${PROG8_VERSION}-all.jar" -o "build/tools/prog8c-${PROG8_VERSION}-all.jar"
-          echo "7117cabdb1d3ecf11d4f38aa7e2cea570056a3eb2c3b3f4e8593838b1b4115c0  build/tools/prog8c-${PROG8_VERSION}-all.jar" | sha256sum -c -
-      - name: Verify maintained VTUI binary
-        if: matrix.editor == 'xvi'
-        run: |
-          cp src/vtui/VTUI.BIN build/tools/VTUI.expected.bin
-          python3 tools/rebuild_vtui.py
-          cmp src/vtui/VTUI.BIN build/tools/VTUI.expected.bin
-      - name: Build program
-        run: make build XVI_EDITOR="${{ matrix.editor }}" OPT=-noopt JAR="$PWD/build/tools/prog8c-${PROG8_VERSION}-all.jar"
+          curl -fL --retry 3 https://github.com/irmen/prog8/releases/download/v12.0.1/prog8c-12.0.1-all.jar -o prog8c-12.0.1-all.jar
+          echo '83bfbade1ee8cdc0cf846740339a6e3c4656aa1f5b63f55b054e5c0f18c810a0  prog8c-12.0.1-all.jar' | sha256sum -c -
+      - name: Build XVI2 or recover archived VTUI executable
+        run: make build XVI_EDITOR="${{ matrix.editor }}"
       - name: Package PRG
+        env:
+          TASK_EDITOR: ${{ matrix.editor }}
         run: |
-          test -s "${{ matrix.editor }}.prg"
-          mkdir -p build/cx16
-          if [ "${{ matrix.editor }}" = xvi ]; then
-            cp xvi.prg build/cx16/XVI.PRG
+          mkdir -p build/recovered
+          if [ "$TASK_EDITOR" = xvi2 ]; then
+            cp xvi2.prg build/recovered/XVI2-X16.PRG
           else
-            cp xvi2.prg build/cx16/XVI2.PRG
+            cp xvi.prg build/recovered/XVI-VTUI-ORIGINAL.PRG
+            cmp xvi.prg recovery/XVI-VTUI-ORIGINAL.PRG
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.editor }}-cx16-prog8-14.0-BETA3
-          path: build/cx16/*.PRG
+          name: restored-${{ matrix.editor }}
+          path: build/recovered/*.PRG
           if-no-files-found: error
-
-  draft-release:
-    name: Create release
-    if: startsWith(github.ref, 'refs/tags/draft-') || startsWith(github.ref, 'refs/tags/prerelease-')
-    needs: [build, test]
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: xvi*-cx16-prog8-14.0-BETA3
-          path: artifacts
-      - name: Prepare release files
-        run: |
-          mkdir release
-          cp artifacts/xvi2-cx16-prog8-14.0-BETA3/XVI2.PRG release/XVI2-X16.PRG
-          cp artifacts/xvi-cx16-prog8-14.0-BETA3/XVI.PRG release/XVI-VTUI-X16.PRG
-      - name: Publish PRGs
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          cat > notes.md <<'NOTES'
-          XVI2 and XVI-VTUI display-fix test release for Commander X16.
-
-          Fixes black edge strips and restores the original VTUI green surround, black frame and gray/blue editing area. Scroll operations now preserve chrome and copy complete cells at both viewport edges.
-
-          Assets: XVI2-X16.PRG (ISO/ASCII) and XVI-VTUI-X16.PRG (PETSCII/VTUI). Both are standalone PRGs; VTUI is embedded.
-
-          Both detect installed banked RAM: 480 KiB of document capacity on 512 KiB machines, or 2,016 KiB with 2 MiB installed. Positions and line numbers use 32-bit values.
-          Full-capacity save/reload and 70,145-line document tests pass on both RAM configurations. See the wiki for commands and remaining limitations.
-          Built on Linux with Prog8 14.0-BETA3 and 64tass, using -noopt.
-          Both editors target X16. Buffer/document suites execute in Prog8 VM and headless x16emu; PETSCII/VTUI has native document, file-round-trip and rendering checks. Native display tests check full-canvas colors, edge clearing and bounded scrolling. Normal-boot splash, file loading and scrolling were also inspected in both editors.
-          NOTES
-          options=(--prerelease)
-          if [[ "$RELEASE_TAG" == draft-* ]]; then options+=(--draft); fi
-          gh release create "$RELEASE_TAG" release/*.PRG --verify-tag "${options[@]}" --title "XVI2 and XVI-VTUI display-fix test release" --notes-file notes.md
-
-  test:
-    name: TAP tests (${{ matrix.backend }}, ${{ matrix.ram }} KiB)
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - backend: virtual
-            ram: 512
-          - backend: cx16
-            ram: 512
-          - backend: cx16
-            ram: 2048
-    runs-on: ubuntu-24.04
-    env:
-      PROG8_VERSION: 14.0-BETA3
-      BACKEND: ${{ matrix.backend }}
-      X16_RAM_KB: ${{ matrix.ram }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-      - name: Install test tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y perl python3 64tass unzip libsdl2-2.0-0
-      - name: Download and verify Prog8
-        run: |
-          mkdir -p build/tools
-          curl -fL --retry 3 "https://github.com/irmen/prog8/releases/download/v${PROG8_VERSION}/prog8c-${PROG8_VERSION}-all.jar" -o "build/tools/prog8c-${PROG8_VERSION}-all.jar"
-          echo "7117cabdb1d3ecf11d4f38aa7e2cea570056a3eb2c3b3f4e8593838b1b4115c0  build/tools/prog8c-${PROG8_VERSION}-all.jar" | sha256sum -c -
-      - name: Download and verify headless X16 emulator
-        if: matrix.backend == 'cx16'
-        run: |
-          curl -fL --retry 3 https://github.com/X16Community/x16-emulator/releases/download/r49/x16emu_linux-x86_64-r49.zip -o build/tools/x16emu-r49.zip
-          echo 'efb2d4ad36ae4244370004891aa67bdf85d2ec01b42b7f12f97b48b62aff009d  build/tools/x16emu-r49.zip' | sha256sum -c -
-          unzip -q build/tools/x16emu-r49.zip -d build/tools/x16emu
-          chmod +x build/tools/x16emu/x16emu
-      - name: Execute P8 TAP tests with prove
-        run: |
-          export JAR="$PWD/build/tools/prog8c-${PROG8_VERSION}-all.jar"
-          if [ "$BACKEND" = cx16 ]; then
-            export X16EMU="$PWD/build/tools/x16emu/x16emu"
-            export X16ROM="$PWD/build/tools/x16emu/rom.bin"
-            test -x "$X16EMU" && test -s "$X16ROM"
-            prove -v t/03-*.t t/04-*.t t/05-*.t t/06-*.t t/07-*.t t/08-*.t t/09-*.t
-          else
-            prove -v t/01-*.t t/02-*.t
-          fi

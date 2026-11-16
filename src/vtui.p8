@@ -1,9 +1,8 @@
-%import textio
 vtui $8800 {
     %option no_symbol_prefixing
-    %asmbinary "src/vtui/VTUI.BIN", 2     ; skip the 2 dummy load address bytes
-    ; This bundled relocatable binary is initialized at $8800. Call once per load.
-    ; Stable jump-table ABI for the maintained VTUI variant; see docs/VTUI-INTERFACE.md.
+    %asmbinary "VTUI-C1C7.BIN", 2     ; skip the 2 dummy load address bytes
+    ; NOTE: base address $1000 here must be the same as the block's memory address, for obvious reasons!
+    ; The routines below are for VTUI 1.0
     extsub $8800 = initialize() clobbers(A, X, Y)
     extsub $8802 = screen_set(ubyte mode @A) clobbers(A, X, Y)
     extsub $8805 = set_bank(bool bank1 @Pc) clobbers(A)
@@ -28,13 +27,18 @@ vtui $8800 {
     extsub $8838 = get_bank() clobbers (A) -> bool @Pc
     extsub $883b = get_stride() -> ubyte @A
     extsub $883e = get_decr() clobbers (A) -> bool @Pc
-    sub print_str2(str text, ubyte colors, bool convertchars) {
-        ubyte n = 0
-        while text[n] != 0 and n != 255
-            n++
-        ubyte convert = 0
-        if not convertchars
-            convert = $80
-        print_str(text, n, colors, convert)
+    ; -- helper function to do string length counting for you internally, and turn the convertchars flag into a boolean again
+    asmsub print_str2(str txtstring @R0, ubyte colors @X, bool convertchars @Pc) clobbers(A, Y) {
+        %asm {{
+            lda  #0
+            bcs  +
+            lda  #$80
++           pha
+            lda  cx16.r0
+            ldy  cx16.r0+1
+            jsr  prog8_lib.strlen
+            pla
+            jmp  print_str
+        }}
     }
 }
